@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-Pokémon Emerald Shiny Hunter - Automated Starter Reset Script
-Uses mGBA Python bindings to hunt for shiny starters
+Pokémon Emerald Shiny Hunter - Mudkip
+Uses mGBA Python bindings to hunt for shiny Mudkip starter
 
-Loads from .sav file and presses A until game has loaded.
+Loads from .sav file and presses buttons to select Mudkip.
+Identifies Pokemon species from memory to verify which starter was obtained.
 
-Stability Features:
+Features:
+- Identifies Pokemon species from memory (Torchic, Treecko, or Mudkip)
 - Error handling with automatic retry (up to 3 consecutive errors)
 - Periodic status updates every 10 attempts or 5 minutes
 - Automatic recovery on errors (resets core and reloads save)
@@ -35,25 +37,32 @@ TID = 56078
 SID = 24723
 
 # Memory addresses
-PARTY_PV_ADDR = 0x020244EC  # Personality Value of first party Pokemon
-PARTY_SPECIES_ADDR = 0x020244EC + 0x08  # Species ID (16-bit) at offset 8 from PV
+# Party structure layout (Emerald US):
+# - 0x020244EC (+0x00): Personality Value (4 bytes)
+# - 0x020244F0 (+0x04): Trainer ID (16-bit)
+# - Encrypted substructures start at +0x20 (32 bytes from PV)
+PARTY_PV_ADDR = 0x020244EC  # Personality Value of first party Pokemon (4 bytes)
+PARTY_TID_ADDR = 0x020244F0  # Trainer ID (16-bit) - at offset +0x04 from PV
 
 # Pokemon species IDs (Gen III)
+# Battle structure IDs used in memory (Emerald US)
 POKEMON_SPECIES = {
-    252: "Treecko",
-    253: "Grovyle",
-    254: "Sceptile",
-    255: "Torchic",
-    256: "Combusken",
-    257: "Blaziken",
-    258: "Mudkip",
-    259: "Marshtomp",
-    260: "Swampert",
+    277: "Treecko",  # 0x0115
+    280: "Torchic",  # 0x0118
+    283: "Mudkip",   # 0x011B
 }
 
-# Number of A presses needed (determined by test_fast_presses.py)
-A_PRESSES_NEEDED = 26  # Max presses needed with 15 frame delays (0.25s)
+# Button sequence for Mudkip (determined by test_mudkip_sequence.py)
+# 20 A presses -> wait 60 frames -> Right (twice) -> wait -> 2 A presses
+A_PRESSES_BEFORE_RIGHT = 20  # A presses to get to selection screen
+WAIT_AFTER_A_FRAMES = 60  # Wait 1.0s after A presses before Right (increased for reliability)
+WAIT_AFTER_RIGHT_FRAMES = 15  # Wait after Right button before A presses
+RIGHT_PRESS_COUNT = 2  # Press Right twice to ensure it registers
+A_PRESSES_AFTER_RIGHT = 2  # A presses after Right button (Pokemon found after 2)
 A_PRESS_DELAY_FRAMES = 15  # Frames to wait between presses (0.25s at 60 FPS)
+
+# Button constants (GBA button bits)
+KEY_RIGHT = 16  # bit 4
 
 
 class ShinyHunter:
@@ -151,31 +160,92 @@ class ShinyHunter:
         self.run_frames(hold_frames)
         self.core._core.setKeys(self.core._core, 0)
         self.run_frames(release_frames)
+    
+    def press_right(self, hold_frames=5, release_frames=5):
+        """Press and release Right button"""
+        self.core._core.setKeys(self.core._core, KEY_RIGHT)
+        self.run_frames(hold_frames)
+        self.core._core.setKeys(self.core._core, 0)
+        self.run_frames(release_frames)
 
     def selection_sequence(self, verbose=False):
-        """Execute the full selection button sequence with optimized delays"""
-        delay_seconds = A_PRESS_DELAY_FRAMES / 60.0
-        if verbose:
-            print(f"[*] Pressing A button up to {A_PRESSES_NEEDED} times with {delay_seconds:.2f}s delays...")
+        """Execute the full selection button sequence for Mudkip
         
-        for i in range(A_PRESSES_NEEDED):
+        Sequence: 20 A presses -> wait 30 frames -> Right -> 2 A presses
+        """
+        delay_seconds = A_PRESS_DELAY_FRAMES / 60.0
+        wait_seconds = WAIT_AFTER_A_FRAMES / 60.0
+        
+        if verbose:
+            print(f"[*] Pressing {A_PRESSES_BEFORE_RIGHT} A buttons, then Right, then {A_PRESSES_AFTER_RIGHT} A buttons...")
+        
+        # Step 1: Press A buttons to get to selection screen
+        if verbose:
+            print(f"    Pressing {A_PRESSES_BEFORE_RIGHT} A buttons...", end='', flush=True)
+        
+        for i in range(A_PRESSES_BEFORE_RIGHT):
+            self.press_a(hold_frames=5, release_frames=5)
+            self.run_frames(A_PRESS_DELAY_FRAMES)
+            if verbose and (i + 1) % 5 == 0:
+                print(f" {i+1}...", end='', flush=True)
+        
+        if verbose:
+            print(" Done")
+        
+        # Step 2: Wait before pressing Right (ensures selection screen is ready)
+        if verbose:
+            print(f"    Waiting {wait_seconds:.2f}s...", end='', flush=True)
+        self.run_frames(WAIT_AFTER_A_FRAMES)
+        if verbose:
+            print(" Done")
+        
+        # Step 3: Press Right to move to Mudkip (press twice to ensure it registers)
+        if verbose:
+            print(f"    Pressing Right {RIGHT_PRESS_COUNT} time(s)...", end='', flush=True)
+        for _ in range(RIGHT_PRESS_COUNT):
+            self.press_right(hold_frames=5, release_frames=5)
+            self.run_frames(A_PRESS_DELAY_FRAMES)
+        # Additional wait after Right to ensure cursor moved
+        self.run_frames(WAIT_AFTER_RIGHT_FRAMES)
+        if verbose:
+            print(" Done")
+        
+        # Step 4: Press A buttons to select Mudkip
+        if verbose:
+            print(f"    Pressing {A_PRESSES_AFTER_RIGHT} A buttons...", end='', flush=True)
+        
+        pokemon_found = False
+        for i in range(A_PRESSES_AFTER_RIGHT):
             self.press_a(hold_frames=5, release_frames=5)
             
             # Check for Pokemon after each press (early exit if found)
             pv = self.read_u32(PARTY_PV_ADDR)
             if pv != 0:
+                pokemon_found = True
                 if verbose:
-                    print(f"    Pokemon found after {i+1} presses!    ")
-                return  # Early exit - Pokemon found
+                    print(f" Pokemon found after {i+1} A presses!    ")
+                return True  # Early exit - Pokemon found
             
-            # Delay between presses (optimized to 15 frames = 0.25s)
+            # Delay between presses
             self.run_frames(A_PRESS_DELAY_FRAMES)
-            
-            if verbose and (i + 1) % 5 == 0:  # Print every 5 presses
-                print(f"    Press {i+1}/{A_PRESSES_NEEDED}...", end='\r')
+        
+        # If not found after initial presses, try a few more with checking
+        if not pokemon_found:
+            max_retry_presses = 5  # Increased from 3 to 5
+            for i in range(max_retry_presses):
+                self.press_a(hold_frames=5, release_frames=5)
+                pv = self.read_u32(PARTY_PV_ADDR)
+                if pv != 0:
+                    pokemon_found = True
+                    if verbose:
+                        print(f" Pokemon found after {A_PRESSES_AFTER_RIGHT + i + 1} A presses!    ")
+                    return True
+                self.run_frames(A_PRESS_DELAY_FRAMES)
         
         if verbose:
-            print(f"    Press {A_PRESSES_NEEDED}/{A_PRESSES_NEEDED} complete!    ")
+            print(" Done")
+        
+        return pokemon_found
 
     def read_u32(self, address):
         """Read 32-bit unsigned integer from memory"""
@@ -191,14 +261,113 @@ class ShinyHunter:
         b1 = self.core._core.busRead8(self.core._core, address + 1)
         return b0 | (b1 << 8)
     
-    def get_pokemon_species(self):
-        """Get the Pokemon species ID and name from memory"""
+    def read_u8(self, address):
+        """Read 8-bit unsigned integer from memory"""
+        return self.core._core.busRead8(self.core._core, address)
+    
+    def get_substructure_order(self, pv):
+        """Get the order of substructures based on PV
+        
+        PV % 24 determines which of 24 possible orders is used.
+        Substructure types: G=Growth, A=Attacks, E=Condition/EVs, M=Miscellaneous
+        
+        Args:
+            pv: Personality Value
+        
+        Returns:
+            String representing the order (e.g., "GAEM", "GAME", etc.)
+        """
+        order_index = pv % 24
+        # The 24 possible orders for Gen III (verified)
+        orders = [
+            "GAEM", "GAME", "GEAM", "GEMA", "GMAE", "GMEA",
+            "AGEM", "AGME", "AEGM", "AEMG", "AMGE", "AMEG",
+            "EGAM", "EGMA", "EAGM", "EAMG", "EMGA", "EMAG",
+            "MGAE", "MGEA", "MAGE", "MAEG", "MEGA", "MEAG"
+        ]
+        return orders[order_index]
+    
+    def decrypt_party_species(self, pv_addr, tid_addr):
+        """Decrypt and extract species ID from encrypted party data
+        
+        Gen III party structure:
+        - Bytes 0-3: PV (unencrypted)
+        - Bytes 4-5: TID (unencrypted)
+        - Bytes 6-7: SID (unencrypted)
+        - Bytes 32-79: Encrypted substructures (48 bytes = 4 * 12 bytes)
+          - Growth substructure contains species ID in first 2 bytes
+        
+        Decryption steps:
+        1. Determine order using PV % 24 (returns string like "GAEM")
+        2. Find Growth ('G') position in the order string
+        3. Calculate offset: position * 12 bytes
+        4. Read 32 bits from data_start + offset
+        5. Decrypt: encrypted_val ^ (tid ^ pv)
+        6. Extract species: decrypted_val & 0xFFFF
+        
+        Args:
+            pv_addr: Address of Personality Value
+            tid_addr: Address of Trainer ID
+        
+        Returns:
+            (species_id, species_name) if found, or (0, "Unknown") if failed
+        """
         try:
-            species_id = self.read_u16(PARTY_SPECIES_ADDR)
-            species_name = POKEMON_SPECIES.get(species_id, f"Unknown (ID: {species_id})")
-            return species_id, species_name
+            # Read PV and TID
+            pv = self.read_u32(pv_addr)
+            tid = self.read_u16(tid_addr)
+            
+            # Encrypted data starts at exactly 32 bytes after PV address
+            data_start = pv_addr + 32
+            
+            # Step A: Get substructure order using PV % 24
+            order_index = pv % 24
+            order = self.get_substructure_order(pv)  # Returns string like "GAEM"
+            
+            # Step B: Find Growth ('G') position in the order
+            growth_pos = order.index('G')
+            
+            # Step C: Calculate offset (each substructure is 12 bytes)
+            offset = growth_pos * 12
+            
+            # Step D: Read 32 bits (4 bytes) from data_start + offset
+            encrypted_val = self.read_u32(data_start + offset)
+            
+            # Step E: Decrypt: encrypted_val ^ (tid ^ pv)
+            xor_key = (tid & 0xFFFF) ^ pv
+            decrypted_val = encrypted_val ^ xor_key
+            
+            # Step F: Extract species ID (lower 16 bits)
+            species_id = decrypted_val & 0xFFFF
+            
+            # Debug: Print decryption details (only for first few attempts)
+            if hasattr(self, 'attempts') and self.attempts <= 3:
+                print(f"    [DEBUG] PV=0x{pv:08X}, TID={tid}, Order='{order}', Growth at position {growth_pos}, Offset={offset}")
+                print(f"    [DEBUG] Encrypted=0x{encrypted_val:08X}, XOR_KEY=0x{xor_key:08X}, Decrypted=0x{decrypted_val:08X}")
+                print(f"    [DEBUG] Species ID={species_id} (0x{species_id:04X})")
+            
+            # Check if it's a valid starter ID
+            if species_id in POKEMON_SPECIES:
+                species_name = POKEMON_SPECIES.get(species_id, f"Unknown (ID: {species_id})")
+                if hasattr(self, 'attempts') and self.attempts <= 3:
+                    print(f"  [+] Decrypted species: {species_name} (ID: {species_id})")
+                return species_id, species_name
+            
+            return 0, f"Unknown (decrypted ID: {species_id}, not a starter)"
         except Exception as e:
-            return None, f"Error reading species: {e}"
+            return 0, f"Decryption error: {e}"
+    
+    def get_pokemon_species(self):
+        """Get the Pokemon species ID and name from memory by decrypting party data
+        
+        Decrypts the Growth substructure from the party data to extract species ID.
+        This is necessary because species ID is encrypted in party RAM.
+        
+        Returns:
+            (species_id, species_name) if found, or (0, "Unknown") if failed
+        """
+        # Use expected addresses directly (they're stable in Emerald)
+        return self.decrypt_party_species(PARTY_PV_ADDR, PARTY_TID_ADDR)
 
     def check_shiny(self):
         """Check if the starter Pokémon is shiny
@@ -427,12 +596,29 @@ class ShinyHunter:
 
                 # Execute selection sequence (press A until game loads)
                 # Also re-write RNG seed periodically during A presses to prevent overwrite
-                actual_presses = self.selection_sequence(verbose=(self.attempts <= 3))  # Only verbose for first 3 attempts
+                pokemon_found = self.selection_sequence(verbose=(self.attempts <= 3))  # Only verbose for first 3 attempts
                 
                 # Re-write RNG seed after A presses to ensure it's still set
                 # (in case game overwrote it during the sequence)
                 self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
                 self.run_frames(5)  # Small delay to let it take effect
+                
+                # Wait for Pokemon data to be fully loaded
+                self.run_frames(60)  # 1 second delay to ensure data is loaded
+                
+                # Check if Pokemon was found during sequence
+                pv = self.read_u32(PARTY_PV_ADDR)
+                if pv == 0 and not pokemon_found:
+                    # Pokemon still not found - try pressing A a few more times
+                    for retry in range(3):
+                        self.press_a(hold_frames=5, release_frames=5)
+                        self.run_frames(30)  # Wait 0.5s after each retry press
+                        pv = self.read_u32(PARTY_PV_ADDR)
+                        if pv != 0:
+                            break
+                
+                # Get Pokemon species
+                species_id, species_name = self.get_pokemon_species()
 
                 # Check if shiny
                 is_shiny, pv, shiny_value, details = self.check_shiny()
@@ -443,8 +629,6 @@ class ShinyHunter:
 
                 # Progress update
                 if pv != 0:
-                    # Get Pokemon species
-                    species_id, species_name = self.get_pokemon_species()
                     
                     print(f"\n[Attempt {self.attempts}] Pokemon found!")
                     print(f"  Species: {species_name} (ID: {species_id})")

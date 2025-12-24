@@ -54,7 +54,7 @@ cd emerald-shiny-hunter
    - Position yourself at the bag screen (after Birch asks you to help, when you can select Torchic)
    - Save the game normally in mGBA (this creates/updates the `.sav` file)
 
-3. **Configure Trainer IDs**: Edit `src/shiny_hunter.py` and set your Trainer ID (TID) and Secret ID (SID):
+3. **Configure Trainer IDs**: Edit the starter script you want to use (`src/torchic.py` or `src/mudkip.py`) and set your Trainer ID (TID) and Secret ID (SID):
    ```python
    TID = 56078  # Your Trainer ID
    SID = 24723  # Your Secret ID
@@ -71,19 +71,49 @@ Your save file should be positioned at the moment when:
 
 ## Usage
 
-Run the main script:
+### Starter Scripts
+
+This project includes separate scripts for each starter Pokémon:
+
+- **`torchic.py`**: Hunts for shiny Torchic (middle starter)
+- **`mudkip.py`**: Hunts for shiny Mudkip (right starter)
+
+### Running the Scripts
+
+Run the script for your desired starter:
 
 ```bash
-python3 src/shiny_hunter.py
+# For Torchic
+python3 src/torchic.py
+
+# For Mudkip
+python3 src/mudkip.py
 ```
+
+### Suppressing GBA Debug Output
+
+mGBA may output debug messages that clutter the console. To suppress them, pipe the output through `grep`:
+
+```bash
+# For Torchic
+python3 src/torchic.py 2>&1 | grep -v "^GBA"
+
+# For Mudkip
+python3 src/mudkip.py 2>&1 | grep -v "^GBA"
+```
+
+This filters out lines starting with "GBA" while keeping all other output (including errors and progress updates).
+
+### What the Script Does
 
 The script will:
 1. Load the save file from `roms/Pokemon - Emerald Version (U).sav`
 2. Write a random RNG seed to memory (to bypass Emerald's seed 0 issue)
-3. Execute button presses (A button) to select the starter
-4. Check if the Pokémon is shiny using the Generation III formula
-5. If shiny: save screenshot, play alert sound, send notification, save game state, and stop
-6. If not shiny: reload save and repeat
+3. Execute button presses to select the starter (sequence varies by starter)
+4. Decrypt and identify the Pokémon species from memory
+5. Check if the Pokémon is shiny using the Generation III formula
+6. If shiny: save screenshot, play alert sound, send notification, save game state, and stop
+7. If not shiny: reload save and repeat
 
 ### Progress Output
 
@@ -152,12 +182,20 @@ Pokémon Emerald has a "seed 0" issue where the RNG starts at the same value eac
 
 ## Configuration
 
-Edit these constants in `src/shiny_hunter.py`:
+Edit these constants in the starter script you're using (`src/torchic.py` or `src/mudkip.py`):
 
 - `ROM_PATH`: Path to your ROM file (default: `roms/Pokemon - Emerald Version (U).gba`)
 - `TID`: Your Trainer ID (required for accurate shiny detection)
 - `SID`: Your Secret ID (required for accurate shiny detection)
+
+### Torchic-specific (`src/torchic.py`):
 - `A_PRESSES_NEEDED`: Number of A button presses (default: 26)
+- `A_PRESS_DELAY_FRAMES`: Frames to wait between presses (default: 15)
+
+### Mudkip-specific (`src/mudkip.py`):
+- `A_PRESSES_BEFORE_RIGHT`: A presses before Right button (default: 20)
+- `WAIT_AFTER_A_FRAMES`: Frames to wait after A presses (default: 30)
+- `A_PRESSES_AFTER_RIGHT`: A presses after Right button (default: 2)
 - `A_PRESS_DELAY_FRAMES`: Frames to wait between presses (default: 15)
 
 ## Output Files
@@ -201,10 +239,12 @@ The odds of finding a shiny are **1/8192** in Generation III. This could take th
 ```
 emerald-shiny-hunter/
 ├── src/
-│   ├── shiny_hunter.py      # Main shiny hunting script
-│   ├── test_shiny_save.py    # Test script for save file loading
-│   ├── button_test.py        # Button press testing
-│   └── ...                   # Other test scripts
+│   ├── torchic.py           # Shiny hunting script for Torchic
+│   ├── mudkip.py            # Shiny hunting script for Mudkip
+│   ├── debug/               # Debug and test scripts
+│   │   ├── test_mudkip_sequence.py
+│   │   └── ...
+│   └── ...                  # Other test scripts
 ├── roms/                     # ROM and save files (gitignored)
 ├── screenshots/              # Screenshots when shiny found (gitignored)
 ├── save_states/             # Save states (gitignored)
