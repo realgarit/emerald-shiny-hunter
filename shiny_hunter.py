@@ -12,7 +12,9 @@ import random
 import subprocess
 import time
 import os
+import sys
 from datetime import datetime
+from pathlib import Path
 
 # Configuration
 ROM_PATH = "Pokemon - Emerald Version (U).gba"
@@ -29,7 +31,40 @@ A_PRESSES_NEEDED = 12  # Determined by running debug_buttons.py
 
 
 class ShinyHunter:
-    def __init__(self):
+    def __init__(self, suppress_debug=True):
+        # Set up logging
+        self.log_dir = Path("logs")
+        self.log_dir.mkdir(exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_file = self.log_dir / f"shiny_hunt_{timestamp}.log"
+        
+        # Create a Tee class to write to both console and file
+        class Tee:
+            def __init__(self, *files):
+                self.files = files
+            def write(self, obj):
+                for f in self.files:
+                    f.write(obj)
+                    f.flush()
+            def flush(self):
+                for f in self.files:
+                    f.flush()
+            def isatty(self):
+                # Return True so print() doesn't add extra newlines
+                return True
+        
+        # Open log file and set up tee
+        self.log_file_handle = open(self.log_file, 'w', encoding='utf-8')
+        self.original_stdout = sys.stdout
+        sys.stdout = Tee(sys.stdout, self.log_file_handle)
+        
+        # Suppress GBA debug output by redirecting stderr
+        if suppress_debug:
+            self.original_stderr = sys.stderr
+            self.null_file = open(os.devnull, 'w')
+            sys.stderr = self.null_file
+        
         self.core = mgba.core.load_path(ROM_PATH)
         if not self.core:
             raise RuntimeError(f"Failed to load ROM: {ROM_PATH}")
@@ -44,9 +79,26 @@ class ShinyHunter:
         self.attempts = 0
         self.start_time = time.time()
 
+        print(f"[*] Logging to: {self.log_file}")
         print(f"[*] Loaded ROM: {ROM_PATH}")
         print(f"[*] TID: {TID}, SID: {SID}")
+        print(f"[*] Shiny Formula: (TID ^ SID) ^ (PV_low ^ PV_high) < 8")
+        print(f"[*] TID ^ SID = {TID} ^ {SID} = {TID ^ SID}")
         print(f"[*] Starting shiny hunt...\n")
+    
+    def cleanup(self):
+        """Restore stdout/stderr and close log file"""
+        if hasattr(self, 'log_file_handle') and self.log_file_handle:
+            sys.stdout = self.original_stdout
+            self.log_file_handle.close()
+        if hasattr(self, 'null_file') and self.null_file:
+            sys.stderr = self.original_stderr
+            self.null_file.close()
+            self.null_file = None
+    
+    def __del__(self):
+        """Restore stdout/stderr when object is destroyed"""
+        self.cleanup()
 
     def reset_to_save(self):
         """Reset and load from .sav file"""
@@ -73,13 +125,21 @@ class ShinyHunter:
         self.core._core.setKeys(self.core._core, 0)
         self.run_frames(release_frames)
 
-    def selection_sequence(self):
+    def selection_sequence(self, verbose=False):
         """Execute the full selection button sequence with 1 second pauses"""
-        for _ in range(A_PRESSES_NEEDED):
+        if verbose:
+            print(f"[*] Pressing A button {A_PRESSES_NEEDED} times with 1 second pauses...")
+        
+        for i in range(A_PRESSES_NEEDED):
             self.press_a(hold_frames=5, release_frames=5)
             # 1 second pause (60 frames at 60 FPS + actual sleep)
             self.run_frames(60)
+            if verbose and (i + 1) % 3 == 0:  # Print every 3 presses
+                print(f"    Press {i+1}/{A_PRESSES_NEEDED}...", end='\r')
             time.sleep(1.0)
+        
+        if verbose:
+            print(f"    Press {A_PRESSES_NEEDED}/{A_PRESSES_NEEDED} complete!    ")
 
     def read_u32(self, address):
         """Read 32-bit unsigned integer from memory"""
@@ -90,20 +150,41 @@ class ShinyHunter:
         return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 
     def check_shiny(self):
-        """Check if the starter Pokémon is shiny"""
+        """Check if the starter Pokémon is shiny
+        
+        Gen III Shiny Formula:
+        Shiny if: (TID XOR SID) XOR (PV_low XOR PV_high) < 8
+        
+        Where:
+        - TID = Trainer ID (56078)
+        - SID = Secret ID / Shiny ID (24723)
+        - PV = Personality Value (32-bit)
+        - PV_low = lower 16 bits of PV
+        - PV_high = upper 16 bits of PV
+        """
         pv = self.read_u32(PARTY_PV_ADDR)
 
         if pv == 0:
-            return False, 0, 0
+            return False, 0, 0, {}
 
-        # Calculate shiny value using Gen III formula
-        pv_low = pv & 0xFFFF
-        pv_high = (pv >> 16) & 0xFFFF
-        shiny_value = (TID ^ SID) ^ (pv_low ^ pv_high)
+        # Calculate shiny value using Gen III formula: (TID ^ SID) ^ (PV_low ^ PV_high) < 8
+        pv_low = pv & 0xFFFF  # Lower 16 bits
+        pv_high = (pv >> 16) & 0xFFFF  # Upper 16 bits
+        tid_xor_sid = TID ^ SID  # Trainer ID XOR Secret ID
+        pv_xor = pv_low ^ pv_high  # PV lower XOR PV upper
+        shiny_value = tid_xor_sid ^ pv_xor  # Final shiny calculation
 
-        is_shiny = shiny_value < 8
+        is_shiny = shiny_value < 8  # Shiny if result is less than 8
+        
+        details = {
+            'pv_low': pv_low,
+            'pv_high': pv_high,
+            'tid_xor_sid': tid_xor_sid,
+            'pv_xor': pv_xor,
+            'shiny_value': shiny_value
+        }
 
-        return is_shiny, pv, shiny_value
+        return is_shiny, pv, shiny_value, details
 
     def save_screenshot(self):
         """Save a screenshot of the shiny Pokémon
@@ -249,11 +330,14 @@ class ShinyHunter:
             random_delay = random.randint(10, 100)
             self.run_frames(random_delay)
 
+            print(f"\n[Attempt {self.attempts}] Starting new reset...")
+            print(f"  RNG Seed: 0x{random_seed:08X}, Delay: {random_delay} frames")
+
             # Execute selection sequence (press A until game loads)
-            self.selection_sequence()
+            self.selection_sequence(verbose=True)
 
             # Check if shiny
-            is_shiny, pv, shiny_value = self.check_shiny()
+            is_shiny, pv, shiny_value, details = self.check_shiny()
 
             # Calculate rate
             elapsed = time.time() - self.start_time
@@ -261,11 +345,16 @@ class ShinyHunter:
 
             # Progress update
             if pv != 0:
-                print(f"[{self.attempts:6d}] PV: {pv:08X} | Shiny: {shiny_value:5d} | Rate: {rate:.2f}/s", end="")
-
+                print(f"\n[Attempt {self.attempts}] Pokemon found!")
+                print(f"  PV: 0x{pv:08X}")
+                print(f"  PV Low:  0x{details['pv_low']:04X} ({details['pv_low']})")
+                print(f"  PV High: 0x{details['pv_high']:04X} ({details['pv_high']})")
+                print(f"  TID ^ SID: 0x{details['tid_xor_sid']:04X} ({details['tid_xor_sid']})")
+                print(f"  PV XOR: 0x{details['pv_xor']:04X} ({details['pv_xor']})")
+                print(f"  Shiny Value: {shiny_value} (need < 8 for shiny)")
+                
                 if is_shiny:
-                    print("\n")
-                    print("=" * 60)
+                    print("\n" + "=" * 60)
                     print("🎉 SHINY FOUND! 🎉")
                     print("=" * 60)
                     print(f"Attempts: {self.attempts}")
@@ -308,14 +397,20 @@ class ShinyHunter:
                     print("\n[!] Script exiting. The shiny Pokemon is in your party!")
                     return True  # Exit the hunt loop
                 else:
-                    print("\r", end="")  # Overwrite line
+                    print(f"  Result: NOT SHINY (shiny value {shiny_value} >= 8)")
+                    print(f"  Rate: {rate:.2f} attempts/sec | Elapsed: {elapsed/60:.1f} min")
+                    print(f"  Estimated time to shiny: ~{(8192/rate)/60:.1f} minutes (1/8192 odds)")
             else:
-                print(f"[{self.attempts:6d}] No Pokemon found - may need more A presses", end="\r")
+                print(f"[Attempt {self.attempts}] No Pokemon found yet - checking...")
+                print(f"  PV at 0x{PARTY_PV_ADDR:08X}: 0x{pv:08X}")
+                print(f"  May need more A presses or game hasn't loaded yet")
 
 
 def main():
+    hunter = None
     try:
-        hunter = ShinyHunter()
+        # Suppress GBA debug output by default
+        hunter = ShinyHunter(suppress_debug=True)
         hunter.hunt()
     except KeyboardInterrupt:
         print("\n[!] Hunt interrupted by user.")
@@ -323,6 +418,10 @@ def main():
         print(f"\n[!] Error: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        # Always restore stderr
+        if hunter:
+            hunter.cleanup()
 
 
 if __name__ == "__main__":
