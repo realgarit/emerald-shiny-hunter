@@ -52,14 +52,18 @@ POKEMON_SPECIES = {
     283: "Mudkip",   # 0x011B
 }
 
-# Button sequence for Mudkip (determined by test_mudkip_sequences.py)
-# Recommended: 20 A dialogue -> wait 0.5s -> 1x Right -> wait 0.2s -> 1 A select -> 5 A more
-# Note: 22+ A dialogue causes early Torchic selection, so 20 is optimal
-A_PRESSES_DIALOGUE = 20  # A presses to get through dialogue (20 is optimal, 22+ causes Torchic)
+# Button sequence for Mudkip (optimized by test_mudkip_sequences_comprehensive.py with RNG manipulation)
+# Best sequence found: 19 A dialogue -> wait 0.5s -> 2x Right (delay 30) -> wait 0.2s -> 8 A select (delay 30)
+# Test results with RNG: 60-70% Mudkip success (best achievable with fixed sequence)
+# Note: With RNG manipulation, 100% success is difficult, but this sequence is the best found
+# 18 A dialogue = no Pokemon found, 21+ A dialogue = selects Torchic
+A_PRESSES_DIALOGUE = 19  # A presses to get through dialogue (19 is best with RNG, 21+ causes Torchic)
 WAIT_FOR_BAG_FRAMES = 30  # Wait 0.5s for bag screen to appear
-RIGHT_PRESS_COUNT = 1  # Press Right 1 time (debug test shows 1x works, 10x also works but slower)
-WAIT_AFTER_RIGHT_FRAMES = 12  # Wait 0.2s after Right button before A presses (matches debug test)
-A_PRESSES_SELECT = 6  # A presses to select Mudkip (1 initial + 5 more, Pokemon found after 2 A)
+RIGHT_PRESS_COUNT = 2  # Press Right 2 times for reliability (tested: 2x is better than 1x with RNG)
+RIGHT_PRESS_DELAY_FRAMES = 30  # Wait 0.5s after each Right press (improves reliability)
+WAIT_AFTER_RIGHT_FRAMES = 12  # Wait 0.2s after Right presses before A presses
+A_PRESSES_SELECT = 8  # A presses to select Mudkip (8 is more reliable with RNG manipulation)
+A_SELECT_DELAY_FRAMES = 30  # Wait 0.5s between A presses when selecting (improves reliability)
 A_PRESS_DELAY_FRAMES = 15  # Frames to wait between presses (0.25s at 60 FPS)
 MAX_RETRY_PRESSES = 8  # Maximum retry A presses if Pokemon not found
 
@@ -173,15 +177,18 @@ class ShinyHunter:
     def selection_sequence(self, verbose=False):
         """Execute the full selection button sequence for Mudkip
         
-        Optimal sequence (from test_mudkip_sequences.py):
-        20 A dialogue -> wait 0.5s -> Right (10x) -> wait 0.25s -> 1-2 A to select
+        Optimal sequence (from test_mudkip_sequences_comprehensive.py with RNG manipulation):
+        19 A dialogue -> wait 0.5s -> 2x Right (delay 0.5s) -> wait 0.2s -> 8 A select (delay 0.5s)
+        Tested with RNG: 60-70% Mudkip success (best achievable with fixed sequence)
         """
         delay_seconds = A_PRESS_DELAY_FRAMES / 60.0
         wait_bag_seconds = WAIT_FOR_BAG_FRAMES / 60.0
         wait_right_seconds = WAIT_AFTER_RIGHT_FRAMES / 60.0
+        right_delay_seconds = RIGHT_PRESS_DELAY_FRAMES / 60.0
+        select_delay_seconds = A_SELECT_DELAY_FRAMES / 60.0
         
         if verbose:
-            print(f"[*] {A_PRESSES_DIALOGUE} A dialogue -> wait {wait_bag_seconds:.1f}s -> {RIGHT_PRESS_COUNT}x Right -> wait {wait_right_seconds:.1f}s -> {A_PRESSES_SELECT} A select")
+            print(f"[*] {A_PRESSES_DIALOGUE} A dialogue -> wait {wait_bag_seconds:.1f}s -> {RIGHT_PRESS_COUNT}x Right (delay {right_delay_seconds:.1f}s) -> wait {wait_right_seconds:.1f}s -> {A_PRESSES_SELECT} A select (delay {select_delay_seconds:.1f}s)")
         
         # Step 1: Press A buttons to get through dialogue
         if verbose:
@@ -203,12 +210,12 @@ class ShinyHunter:
         if verbose:
             print(" Done")
         
-        # Step 3: Press Right to move to Mudkip (press 10 times to ensure it registers)
+        # Step 3: Press Right to move to Mudkip (with delay after each press)
         if verbose:
-            print(f"    Pressing Right {RIGHT_PRESS_COUNT} time(s)...", end='', flush=True)
+            print(f"    Pressing Right {RIGHT_PRESS_COUNT} time(s) (delay {right_delay_seconds:.1f}s after each)...", end='', flush=True)
         for _ in range(RIGHT_PRESS_COUNT):
             self.press_right(hold_frames=5, release_frames=5)
-            self.run_frames(A_PRESS_DELAY_FRAMES)
+            self.run_frames(RIGHT_PRESS_DELAY_FRAMES)  # Use specific delay for Right presses
         if verbose:
             print(" Done")
         
@@ -219,10 +226,9 @@ class ShinyHunter:
         if verbose:
             print(" Done")
         
-        # Step 5: Press A buttons to select Mudkip
-        # From debug test: 1 A select + 5 A more = 6 total, Pokemon found after 2 A
+        # Step 5: Press A buttons to select Mudkip (with delay between presses)
         if verbose:
-            print(f"    Pressing {A_PRESSES_SELECT} A buttons to select...", end='', flush=True)
+            print(f"    Pressing {A_PRESSES_SELECT} A buttons to select (delay {select_delay_seconds:.1f}s between)...", end='', flush=True)
         
         pokemon_found = False
         for i in range(A_PRESSES_SELECT):
@@ -236,8 +242,8 @@ class ShinyHunter:
                     print(f" Pokemon found after {i+1} A presses!    ")
                 return True  # Early exit - Pokemon found
             
-            # Delay between presses
-            self.run_frames(A_PRESS_DELAY_FRAMES)
+            # Delay between presses (use specific delay for select presses)
+            self.run_frames(A_SELECT_DELAY_FRAMES)
         
         # If not found after initial presses, try more with checking
         if not pokemon_found:
