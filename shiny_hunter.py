@@ -4,6 +4,14 @@ Pokémon Emerald Shiny Hunter - Automated Starter Reset Script
 Uses mGBA Python bindings to hunt for shiny starters
 
 Loads from .sav file and presses A until game has loaded.
+
+Stability Features:
+- Error handling with automatic retry (up to 3 consecutive errors)
+- Periodic status updates every 10 attempts or 5 minutes
+- Automatic recovery on errors (resets core and reloads save)
+- Memory management: core is reset each iteration, file handles properly closed
+- Logging to file for persistence
+- Can run indefinitely (no memory leaks expected)
 """
 
 import mgba.core
@@ -308,102 +316,158 @@ class ShinyHunter:
             print(f"[!] Failed to save game state: {e}")
             return None
 
-    def hunt(self):
-        """Main hunting loop"""
+    def hunt(self, max_attempts=None, error_retry_limit=3):
+        """Main hunting loop
+        
+        Args:
+            max_attempts: Maximum number of attempts (None = unlimited)
+            error_retry_limit: Number of times to retry on error before giving up
+        """
+        consecutive_errors = 0
+        last_status_update = time.time()
+        
         while True:
-            self.attempts += 1
-
-            # Reset and load from .sav file
-            if not self.reset_to_save():
-                print("[!] Failed to load save. Exiting.")
+            # Check max attempts
+            if max_attempts and self.attempts >= max_attempts:
+                print(f"\n[!] Reached maximum attempts ({max_attempts}). Stopping.")
                 return False
-
-            # RNG variation: Write random seed to RNG address after loading
-            # Emerald RNG seed is at 0x03005D80
-            RNG_ADDR = 0x03005D80
-            random_seed = random.randint(0, 0xFFFFFFFF)
-
-            # Write random seed to RNG memory location
-            self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
-
-            # Also wait some frames to let things settle
-            random_delay = random.randint(10, 100)
-            self.run_frames(random_delay)
-
-            print(f"\n[Attempt {self.attempts}] Starting new reset...")
-            print(f"  RNG Seed: 0x{random_seed:08X}, Delay: {random_delay} frames")
-
-            # Execute selection sequence (press A until game loads)
-            self.selection_sequence(verbose=True)
-
-            # Check if shiny
-            is_shiny, pv, shiny_value, details = self.check_shiny()
-
-            # Calculate rate
-            elapsed = time.time() - self.start_time
-            rate = self.attempts / elapsed if elapsed > 0 else 0
-
-            # Progress update
-            if pv != 0:
-                print(f"\n[Attempt {self.attempts}] Pokemon found!")
-                print(f"  PV: 0x{pv:08X}")
-                print(f"  PV Low:  0x{details['pv_low']:04X} ({details['pv_low']})")
-                print(f"  PV High: 0x{details['pv_high']:04X} ({details['pv_high']})")
-                print(f"  TID ^ SID: 0x{details['tid_xor_sid']:04X} ({details['tid_xor_sid']})")
-                print(f"  PV XOR: 0x{details['pv_xor']:04X} ({details['pv_xor']})")
-                print(f"  Shiny Value: {shiny_value} (need < 8 for shiny)")
+            
+            self.attempts += 1
+            
+            try:
+                # Reset and load from .sav file
+                if not self.reset_to_save():
+                    consecutive_errors += 1
+                    print(f"[!] Failed to load save (error {consecutive_errors}/{error_retry_limit})")
+                    if consecutive_errors >= error_retry_limit:
+                        print("[!] Too many consecutive errors. Exiting.")
+                        return False
+                    time.sleep(1)  # Brief pause before retry
+                    continue
                 
-                if is_shiny:
-                    print("\n" + "=" * 60)
-                    print("🎉 SHINY FOUND! 🎉")
-                    print("=" * 60)
-                    print(f"Attempts: {self.attempts}")
-                    print(f"Personality Value: 0x{pv:08X}")
-                    print(f"Shiny Value: {shiny_value}")
-                    print(f"Time Elapsed: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
-                    print("=" * 60)
+                # Reset error counter on success
+                consecutive_errors = 0
 
-                    # Save screenshot and get filepath (may be None if headless)
-                    screenshot_path = self.save_screenshot()
+                # RNG variation: Write random seed to RNG address after loading
+                # Emerald RNG seed is at 0x03005D80
+                RNG_ADDR = 0x03005D80
+                random_seed = random.randint(0, 0xFFFFFFFF)
+
+                # Write random seed to RNG memory location
+                self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
+
+                # Also wait some frames to let things settle
+                random_delay = random.randint(10, 100)
+                self.run_frames(random_delay)
+
+                # Periodic status update every 10 attempts or 5 minutes
+                elapsed = time.time() - self.start_time
+                if (self.attempts % 10 == 0) or (time.time() - last_status_update > 300):
+                    rate = self.attempts / elapsed if elapsed > 0 else 0
+                    print(f"\n[Status] Attempt {self.attempts} | Rate: {rate:.2f}/s | "
+                          f"Elapsed: {elapsed/60:.1f} min | Running smoothly...")
+                    last_status_update = time.time()
+
+                print(f"\n[Attempt {self.attempts}] Starting new reset...")
+                print(f"  RNG Seed: 0x{random_seed:08X}, Delay: {random_delay} frames")
+
+                # Execute selection sequence (press A until game loads)
+                self.selection_sequence(verbose=(self.attempts <= 3))  # Only verbose for first 3 attempts
+
+                # Check if shiny
+                is_shiny, pv, shiny_value, details = self.check_shiny()
+
+                # Calculate rate
+                elapsed = time.time() - self.start_time
+                rate = self.attempts / elapsed if elapsed > 0 else 0
+
+                # Progress update
+                if pv != 0:
+                    print(f"\n[Attempt {self.attempts}] Pokemon found!")
+                    print(f"  PV: 0x{pv:08X}")
+                    print(f"  PV Low:  0x{details['pv_low']:04X} ({details['pv_low']})")
+                    print(f"  PV High: 0x{details['pv_high']:04X} ({details['pv_high']})")
+                    print(f"  TID ^ SID: 0x{details['tid_xor_sid']:04X} ({details['tid_xor_sid']})")
+                    print(f"  PV XOR: 0x{details['pv_xor']:04X} ({details['pv_xor']})")
+                    print(f"  Shiny Value: {shiny_value} (need < 8 for shiny)")
                     
-                    # Play sound
-                    self.play_alert_sound()
-                    
-                    # Send system notification
-                    self.send_notification(
-                        f"Shiny found after {self.attempts} attempts!",
-                        f"PV: 0x{pv:08X} | Time: {elapsed/60:.1f} min"
-                    )
-                    
-                    # Save game state so user can continue playing
-                    print(f"\n[+] Saving game state...")
-                    save_state_path = self.save_game_state()
-                    
-                    # Open screenshot automatically (if available)
-                    if screenshot_path:
-                        print(f"[+] Opening screenshot...")
-                        self.open_screenshot(screenshot_path)
+                    if is_shiny:
+                        print("\n" + "=" * 60)
+                        print("🎉 SHINY FOUND! 🎉")
+                        print("=" * 60)
+                        print(f"Attempts: {self.attempts}")
+                        print(f"Personality Value: 0x{pv:08X}")
+                        print(f"Shiny Value: {shiny_value}")
+                        print(f"Time Elapsed: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
+                        print("=" * 60)
+
+                        # Save screenshot and get filepath (may be None if headless)
+                        screenshot_path = self.save_screenshot()
+                        
+                        # Play sound
+                        self.play_alert_sound()
+                        
+                        # Send system notification
+                        self.send_notification(
+                            f"Shiny found after {self.attempts} attempts!",
+                            f"PV: 0x{pv:08X} | Time: {elapsed/60:.1f} min"
+                        )
+                        
+                        # Save game state so user can continue playing
+                        print(f"\n[+] Saving game state...")
+                        save_state_path = self.save_game_state()
+                        
+                        # Open screenshot automatically (if available)
+                        if screenshot_path:
+                            print(f"[+] Opening screenshot...")
+                            self.open_screenshot(screenshot_path)
+                        else:
+                            print(f"[!] Screenshot not available (headless mode)")
+                            print(f"[!] Load the save state in mGBA GUI to see your shiny!")
+                        
+                        print("\n" + "=" * 60)
+                        print("✓ Game saved! You can now:")
+                        if save_state_path:
+                            print(f"  1. Load save state: {os.path.abspath(save_state_path)}")
+                        print("  2. Or open mGBA and load the .sav file")
+                        print("  3. Continue playing and save in-game normally")
+                        print("=" * 60)
+                        print("\n[!] Script exiting. The shiny Pokemon is in your party!")
+                        return True  # Exit the hunt loop
                     else:
-                        print(f"[!] Screenshot not available (headless mode)")
-                        print(f"[!] Load the save state in mGBA GUI to see your shiny!")
-                    
-                    print("\n" + "=" * 60)
-                    print("✓ Game saved! You can now:")
-                    if save_state_path:
-                        print(f"  1. Load save state: {os.path.abspath(save_state_path)}")
-                    print("  2. Or open mGBA and load the .sav file")
-                    print("  3. Continue playing and save in-game normally")
-                    print("=" * 60)
-                    print("\n[!] Script exiting. The shiny Pokemon is in your party!")
-                    return True  # Exit the hunt loop
+                        print(f"  Result: NOT SHINY (shiny value {shiny_value} >= 8)")
+                        print(f"  Rate: {rate:.2f} attempts/sec | Elapsed: {elapsed/60:.1f} min")
+                        print(f"  Estimated time to shiny: ~{(8192/rate)/60:.1f} minutes (1/8192 odds)")
                 else:
-                    print(f"  Result: NOT SHINY (shiny value {shiny_value} >= 8)")
-                    print(f"  Rate: {rate:.2f} attempts/sec | Elapsed: {elapsed/60:.1f} min")
-                    print(f"  Estimated time to shiny: ~{(8192/rate)/60:.1f} minutes (1/8192 odds)")
-            else:
-                print(f"[Attempt {self.attempts}] No Pokemon found yet - checking...")
-                print(f"  PV at 0x{PARTY_PV_ADDR:08X}: 0x{pv:08X}")
-                print(f"  May need more A presses or game hasn't loaded yet")
+                    print(f"[Attempt {self.attempts}] No Pokemon found yet - checking...")
+                    print(f"  PV at 0x{PARTY_PV_ADDR:08X}: 0x{pv:08X}")
+                    print(f"  May need more A presses or game hasn't loaded yet")
+                    
+            except Exception as e:
+                consecutive_errors += 1
+                elapsed = time.time() - self.start_time
+                print(f"\n[!] Error on attempt {self.attempts}: {e}")
+                print(f"[!] Consecutive errors: {consecutive_errors}/{error_retry_limit}")
+                
+                if consecutive_errors >= error_retry_limit:
+                    print("[!] Too many consecutive errors. Exiting.")
+                    print(f"[!] Total attempts before error: {self.attempts - 1}")
+                    print(f"[!] Total time: {elapsed/60:.1f} minutes")
+                    import traceback
+                    traceback.print_exc()
+                    return False
+                
+                # Try to recover by resetting the core
+                print("[*] Attempting recovery...")
+                try:
+                    self.core.reset()
+                    self.core.autoload_save()
+                    if hasattr(self, 'screenshot_image'):
+                        self.core.set_video_buffer(self.screenshot_image)
+                    time.sleep(2)  # Brief pause before retry
+                except Exception as recovery_error:
+                    print(f"[!] Recovery failed: {recovery_error}")
+                    return False
 
 
 def main():
