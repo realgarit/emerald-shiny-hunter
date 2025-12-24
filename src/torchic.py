@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-Pokémon Emerald Shiny Hunter - Automated Starter Reset Script
-Uses mGBA Python bindings to hunt for shiny starters
+Pokémon Emerald Shiny Hunter - Torchic
+Uses mGBA Python bindings to hunt for shiny Torchic starter
 
 Loads from .sav file and presses A until game has loaded.
+Identifies Pokemon species from memory to verify which starter was obtained.
 
-Stability Features:
+Features:
+- Identifies Pokemon species from memory (Torchic, Treecko, or Mudkip)
 - Error handling with automatic retry (up to 3 consecutive errors)
 - Periodic status updates every 10 attempts or 5 minutes
 - Automatic recovery on errors (resets core and reloads save)
@@ -35,20 +37,19 @@ TID = 56078
 SID = 24723
 
 # Memory addresses
-PARTY_PV_ADDR = 0x020244EC  # Personality Value of first party Pokemon
-PARTY_SPECIES_ADDR = 0x020244EC + 0x08  # Species ID (16-bit) at offset 8 from PV
+# Party structure layout (Emerald US):
+# - 0x020244EC (+0x00): Personality Value (4 bytes)
+# - 0x020244F0 (+0x04): Trainer ID (16-bit)
+# - Encrypted substructures start at +0x20 (32 bytes from PV)
+PARTY_PV_ADDR = 0x020244EC  # Personality Value of first party Pokemon (4 bytes)
+PARTY_TID_ADDR = 0x020244F0  # Trainer ID (16-bit) - at offset +0x04 from PV
 
 # Pokemon species IDs (Gen III)
+# Battle structure IDs used in memory (Emerald US)
 POKEMON_SPECIES = {
-    252: "Treecko",
-    253: "Grovyle",
-    254: "Sceptile",
-    255: "Torchic",
-    256: "Combusken",
-    257: "Blaziken",
-    258: "Mudkip",
-    259: "Marshtomp",
-    260: "Swampert",
+    277: "Treecko",  # 0x0115
+    280: "Torchic",  # 0x0118
+    283: "Mudkip",   # 0x011B
 }
 
 # Number of A presses needed (determined by test_fast_presses.py)
@@ -191,14 +192,113 @@ class ShinyHunter:
         b1 = self.core._core.busRead8(self.core._core, address + 1)
         return b0 | (b1 << 8)
     
-    def get_pokemon_species(self):
-        """Get the Pokemon species ID and name from memory"""
+    def read_u8(self, address):
+        """Read 8-bit unsigned integer from memory"""
+        return self.core._core.busRead8(self.core._core, address)
+    
+    def get_substructure_order(self, pv):
+        """Get the order of substructures based on PV
+        
+        PV % 24 determines which of 24 possible orders is used.
+        Substructure types: G=Growth, A=Attacks, E=Condition/EVs, M=Miscellaneous
+        
+        Args:
+            pv: Personality Value
+        
+        Returns:
+            String representing the order (e.g., "GAEM", "GAME", etc.)
+        """
+        order_index = pv % 24
+        # The 24 possible orders for Gen III (verified)
+        orders = [
+            "GAEM", "GAME", "GEAM", "GEMA", "GMAE", "GMEA",
+            "AGEM", "AGME", "AEGM", "AEMG", "AMGE", "AMEG",
+            "EGAM", "EGMA", "EAGM", "EAMG", "EMGA", "EMAG",
+            "MGAE", "MGEA", "MAGE", "MAEG", "MEGA", "MEAG"
+        ]
+        return orders[order_index]
+    
+    def decrypt_party_species(self, pv_addr, tid_addr):
+        """Decrypt and extract species ID from encrypted party data
+        
+        Gen III party structure:
+        - Bytes 0-3: PV (unencrypted)
+        - Bytes 4-5: TID (unencrypted)
+        - Bytes 6-7: SID (unencrypted)
+        - Bytes 32-79: Encrypted substructures (48 bytes = 4 * 12 bytes)
+          - Growth substructure contains species ID in first 2 bytes
+        
+        Decryption steps:
+        1. Determine order using PV % 24 (returns string like "GAEM")
+        2. Find Growth ('G') position in the order string
+        3. Calculate offset: position * 12 bytes
+        4. Read 32 bits from data_start + offset
+        5. Decrypt: encrypted_val ^ (tid ^ pv)
+        6. Extract species: decrypted_val & 0xFFFF
+        
+        Args:
+            pv_addr: Address of Personality Value
+            tid_addr: Address of Trainer ID
+        
+        Returns:
+            (species_id, species_name) if found, or (0, "Unknown") if failed
+        """
         try:
-            species_id = self.read_u16(PARTY_SPECIES_ADDR)
-            species_name = POKEMON_SPECIES.get(species_id, f"Unknown (ID: {species_id})")
-            return species_id, species_name
+            # Read PV and TID
+            pv = self.read_u32(pv_addr)
+            tid = self.read_u16(tid_addr)
+            
+            # Encrypted data starts at exactly 32 bytes after PV address
+            data_start = pv_addr + 32
+            
+            # Step A: Get substructure order using PV % 24
+            order_index = pv % 24
+            order = self.get_substructure_order(pv)  # Returns string like "GAEM"
+            
+            # Step B: Find Growth ('G') position in the order
+            growth_pos = order.index('G')
+            
+            # Step C: Calculate offset (each substructure is 12 bytes)
+            offset = growth_pos * 12
+            
+            # Step D: Read 32 bits (4 bytes) from data_start + offset
+            encrypted_val = self.read_u32(data_start + offset)
+            
+            # Step E: Decrypt: encrypted_val ^ (tid ^ pv)
+            xor_key = (tid & 0xFFFF) ^ pv
+            decrypted_val = encrypted_val ^ xor_key
+            
+            # Step F: Extract species ID (lower 16 bits)
+            species_id = decrypted_val & 0xFFFF
+            
+            # Debug: Print decryption details (only for first few attempts)
+            if hasattr(self, 'attempts') and self.attempts <= 3:
+                print(f"    [DEBUG] PV=0x{pv:08X}, TID={tid}, Order='{order}', Growth at position {growth_pos}, Offset={offset}")
+                print(f"    [DEBUG] Encrypted=0x{encrypted_val:08X}, XOR_KEY=0x{xor_key:08X}, Decrypted=0x{decrypted_val:08X}")
+                print(f"    [DEBUG] Species ID={species_id} (0x{species_id:04X})")
+            
+            # Check if it's a valid starter ID
+            if species_id in POKEMON_SPECIES:
+                species_name = POKEMON_SPECIES.get(species_id, f"Unknown (ID: {species_id})")
+                if hasattr(self, 'attempts') and self.attempts <= 3:
+                    print(f"  [+] Decrypted species: {species_name} (ID: {species_id})")
+                return species_id, species_name
+            
+            return 0, f"Unknown (decrypted ID: {species_id}, not a starter)"
         except Exception as e:
-            return None, f"Error reading species: {e}"
+            return 0, f"Decryption error: {e}"
+    
+    def get_pokemon_species(self):
+        """Get the Pokemon species ID and name from memory by decrypting party data
+        
+        Decrypts the Growth substructure from the party data to extract species ID.
+        This is necessary because species ID is encrypted in party RAM.
+        
+        Returns:
+            (species_id, species_name) if found, or (0, "Unknown") if failed
+        """
+        # Use expected addresses directly (they're stable in Emerald)
+        return self.decrypt_party_species(PARTY_PV_ADDR, PARTY_TID_ADDR)
 
     def check_shiny(self):
         """Check if the starter Pokémon is shiny
@@ -433,6 +533,12 @@ class ShinyHunter:
                 # (in case game overwrote it during the sequence)
                 self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
                 self.run_frames(5)  # Small delay to let it take effect
+                
+                # Wait for Pokemon data to be fully loaded
+                self.run_frames(60)  # 1 second delay to ensure data is loaded
+                
+                # Get Pokemon species
+                species_id, species_name = self.get_pokemon_species()
 
                 # Check if shiny
                 is_shiny, pv, shiny_value, details = self.check_shiny()
@@ -443,8 +549,6 @@ class ShinyHunter:
 
                 # Progress update
                 if pv != 0:
-                    # Get Pokemon species
-                    species_id, species_name = self.get_pokemon_species()
                     
                     print(f"\n[Attempt {self.attempts}] Pokemon found!")
                     print(f"  Species: {species_name} (ID: {species_id})")
