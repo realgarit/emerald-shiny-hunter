@@ -1,0 +1,41 @@
+# Logs
+logs/
+*.log
+
+# ROMs and save files
+roms/
+*.gba
+*.sav
+*.ss0
+
+# Screenshots
+screenshots/
+*.png
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak
+

@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 import mgba.core
+from pathlib import Path
 
-core = mgba.core.load_path("Pokemon - Emerald Version (U).gba")
+# Get project root directory (parent of src/)
+PROJECT_ROOT = Path(__file__).parent.parent
+
+ROM_PATH = str(PROJECT_ROOT / "roms" / "Pokemon - Emerald Version (U).gba")
+core = mgba.core.load_path(ROM_PATH)
 core.reset()
 
 # Check write methods

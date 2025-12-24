@@ -2,9 +2,13 @@
 """Quick test of shiny hunter - run 5 iterations"""
 import mgba.core
 import random
+from pathlib import Path
 
-ROM_PATH = "Pokemon - Emerald Version (U).gba"
-SAVE_STATE_PATH = "save-state-1.ss0"
+# Get project root directory (parent of src/)
+PROJECT_ROOT = Path(__file__).parent.parent
+
+ROM_PATH = str(PROJECT_ROOT / "roms" / "Pokemon - Emerald Version (U).gba")
+SAVE_STATE_PATH = str(PROJECT_ROOT / "save_states" / "save-state-1.ss0")
 TID = 56078
 SID = 24723
 PARTY_PV_ADDR = 0x020244EC

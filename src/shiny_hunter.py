@@ -24,8 +24,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+# Get project root directory (parent of src/)
+PROJECT_ROOT = Path(__file__).parent.parent
+
 # Configuration
-ROM_PATH = "Pokemon - Emerald Version (U).gba"
+ROM_PATH = str(PROJECT_ROOT / "roms" / "Pokemon - Emerald Version (U).gba")
 
 # Hardcoded trainer IDs (read from SRAM, but constant for this save)
 TID = 56078
@@ -42,7 +45,7 @@ A_PRESS_DELAY_FRAMES = 15  # Frames to wait between presses (0.25s at 60 FPS)
 class ShinyHunter:
     def __init__(self, suppress_debug=True):
         # Set up logging
-        self.log_dir = Path("logs")
+        self.log_dir = PROJECT_ROOT / "logs"
         self.log_dir.mkdir(exist_ok=True)
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -211,8 +214,10 @@ class ShinyHunter:
         The save state will contain the exact game state, so you can load it in mGBA GUI to see the shiny.
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        screenshot_dir = PROJECT_ROOT / "screenshots"
+        screenshot_dir.mkdir(exist_ok=True)
         filename = f"shiny_found_{timestamp}.png"
-        filepath = os.path.abspath(filename)
+        filepath = screenshot_dir / filename
 
         try:
             # Create a fresh image for the screenshot
@@ -243,15 +248,15 @@ class ShinyHunter:
                 print("[!] Warning: Screenshot appears black (headless mode limitation)")
                 print("[!] The save state contains the exact game state - load it in mGBA GUI to see the shiny!")
                 # Still save it, but note it's likely black
-                with open(filename, 'wb') as f:
+                with open(filepath, 'wb') as f:
                     image.save_png(f)
                 print(f"[+] Screenshot file created (may be black): {filepath}")
                 return None  # Return None to indicate screenshot may not be useful
 
-            with open(filename, 'wb') as f:
+            with open(filepath, 'wb') as f:
                 image.save_png(f)
             print(f"[+] Screenshot saved: {filepath}")
-            return filepath
+            return str(filepath)
         except Exception as e:
             print(f"[!] Failed to save screenshot: {e}")
             print("[!] Note: Screenshots may not work in headless mode")
@@ -286,8 +291,10 @@ class ShinyHunter:
         """Save the current game state (both save state and .sav file)"""
         try:
             # Save a save state as backup
+            save_state_dir = PROJECT_ROOT / "save_states"
+            save_state_dir.mkdir(exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_state_filename = f"shiny_save_state_{timestamp}.ss0"
+            save_state_filename = save_state_dir / f"shiny_save_state_{timestamp}.ss0"
             
             state_data = self.core.save_raw_state()
             # Convert CData object to bytes using cffi buffer
@@ -305,23 +312,22 @@ class ShinyHunter:
             with open(save_state_filename, 'wb') as f:
                 f.write(state_bytes)
             
-            print(f"[+] Save state saved: {os.path.abspath(save_state_filename)}")
+            print(f"[+] Save state saved: {save_state_filename}")
             
             # The .sav file should auto-save, but we can try to trigger it
             # by running a few frames to let the game save
             self.run_frames(60)  # Run 1 second to let save complete
             
             # Get .sav file path (mGBA auto-saves to same directory as ROM)
-            rom_dir = os.path.dirname(os.path.abspath(ROM_PATH)) or "."
-            sav_filename = ROM_PATH.replace(".gba", ".sav")
-            sav_path = os.path.join(rom_dir, os.path.basename(sav_filename))
+            rom_dir = Path(ROM_PATH).parent
+            sav_path = rom_dir / Path(ROM_PATH).stem.replace(".gba", "") + ".sav"
             
-            if os.path.exists(sav_path):
-                print(f"[+] Save file updated: {os.path.abspath(sav_path)}")
+            if sav_path.exists():
+                print(f"[+] Save file updated: {sav_path}")
             else:
                 print(f"[!] Note: Save file may be at: {sav_path}")
             
-            return save_state_filename
+            return str(save_state_filename)
         except Exception as e:
             print(f"[!] Failed to save game state: {e}")
             return None
@@ -448,7 +454,7 @@ class ShinyHunter:
                         print("\n" + "=" * 60)
                         print("✓ Game saved! You can now:")
                         if save_state_path:
-                            print(f"  1. Load save state: {os.path.abspath(save_state_path)}")
+                            print(f"  1. Load save state: {save_state_path}")
                         print("  2. Or open mGBA and load the .sav file")
                         print("  3. Continue playing and save in-game normally")
                         print("=" * 60)

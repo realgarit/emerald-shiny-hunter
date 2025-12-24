@@ -5,8 +5,12 @@ Test script to find minimum A presses needed with fast button presses
 import mgba.core
 import random
 import time
+from pathlib import Path
 
-ROM_PATH = "Pokemon - Emerald Version (U).gba"
+# Get project root directory (parent of src/)
+PROJECT_ROOT = Path(__file__).parent.parent
+
+ROM_PATH = str(PROJECT_ROOT / "roms" / "Pokemon - Emerald Version (U).gba")
 TID = 56078
 SID = 24723
 

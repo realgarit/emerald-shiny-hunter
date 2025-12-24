@@ -9,8 +9,12 @@ import subprocess
 import time
 import os
 from datetime import datetime
+from pathlib import Path
 
-ROM_PATH = "Pokemon - Emerald Version (U).gba"
+# Get project root directory (parent of src/)
+PROJECT_ROOT = Path(__file__).parent.parent
+
+ROM_PATH = str(PROJECT_ROOT / "roms" / "Pokemon - Emerald Version (U).gba")
 TID = 56078
 SID = 24723
 PARTY_PV_ADDR = 0x020244EC
@@ -37,9 +41,11 @@ def run_frames(core, n):
 
 def save_screenshot(core):
     """Save a screenshot"""
+    screenshot_dir = PROJECT_ROOT / "screenshots"
+    screenshot_dir.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"test_shiny_{timestamp}.png"
-    filepath = os.path.abspath(filename)
+    filepath = screenshot_dir / filename
 
     try:
         width = 240
@@ -62,10 +68,10 @@ def save_screenshot(core):
             for _ in range(120):
                 core.run_frame()
 
-        with open(filename, 'wb') as f:
+        with open(filepath, 'wb') as f:
             image.save_png(f)
         print(f"[+] Screenshot saved: {filepath}")
-        return filepath
+        return str(filepath)
     except Exception as e:
         print(f"[!] Failed to save screenshot: {e}")
         import traceback
@@ -75,8 +81,10 @@ def save_screenshot(core):
 def save_game_state(core):
     """Save the current game state"""
     try:
+        save_state_dir = PROJECT_ROOT / "save_states"
+        save_state_dir.mkdir(exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_state_filename = f"test_shiny_save_state_{timestamp}.ss0"
+        save_state_filename = save_state_dir / f"test_shiny_save_state_{timestamp}.ss0"
         
         state_data = core.save_raw_state()
         # Convert CData object to bytes using cffi buffer
@@ -95,22 +103,21 @@ def save_game_state(core):
         with open(save_state_filename, 'wb') as f:
             f.write(state_bytes)
         
-        print(f"[+] Save state saved: {os.path.abspath(save_state_filename)}")
+        print(f"[+] Save state saved: {save_state_filename}")
         
         # Run frames to let save complete
         run_frames(core, 60)
         
         # Get .sav file path
-        rom_dir = os.path.dirname(os.path.abspath(ROM_PATH)) or "."
-        sav_filename = ROM_PATH.replace(".gba", ".sav")
-        sav_path = os.path.join(rom_dir, os.path.basename(sav_filename))
+        rom_dir = Path(ROM_PATH).parent
+        sav_path = rom_dir / Path(ROM_PATH).stem.replace(".gba", "") + ".sav"
         
-        if os.path.exists(sav_path):
-            print(f"[+] Save file updated: {os.path.abspath(sav_path)}")
+        if sav_path.exists():
+            print(f"[+] Save file updated: {sav_path}")
         else:
             print(f"[!] Note: Save file may be at: {sav_path}")
         
-        return save_state_filename
+        return str(save_state_filename)
     except Exception as e:
         print(f"[!] Failed to save game state: {e}")
         return None
@@ -218,7 +225,7 @@ if screenshot_path:
 print("\n" + "=" * 60)
 print("✓ TEST COMPLETE! Game saved. You can now:")
 if save_state_path:
-    print(f"  1. Load save state: {os.path.abspath(save_state_path)}")
+    print(f"  1. Load save state: {save_state_path}")
 print("  2. Or open mGBA and load the .sav file")
 print("  3. Continue playing and save in-game normally")
 print("=" * 60)
