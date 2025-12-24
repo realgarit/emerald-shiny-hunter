@@ -363,12 +363,16 @@ class ShinyHunter:
                 RNG_ADDR = 0x03005D80
                 random_seed = random.randint(0, 0xFFFFFFFF)
 
-                # Write random seed to RNG memory location
-                self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
-
-                # Also wait some frames to let things settle
+                # Also wait some frames to let things settle before writing seed
                 random_delay = random.randint(10, 100)
                 self.run_frames(random_delay)
+
+                # Write random seed to RNG memory location AFTER initial delay
+                # This ensures the game has initialized before we manipulate RNG
+                self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
+                
+                # Additional delay after writing seed to let it take effect
+                self.run_frames(random.randint(5, 20))
 
                 # Periodic status update every 10 attempts or 5 minutes
                 elapsed = time.time() - self.start_time
@@ -382,7 +386,13 @@ class ShinyHunter:
                 print(f"  RNG Seed: 0x{random_seed:08X}, Delay: {random_delay} frames")
 
                 # Execute selection sequence (press A until game loads)
-                self.selection_sequence(verbose=(self.attempts <= 3))  # Only verbose for first 3 attempts
+                # Also re-write RNG seed periodically during A presses to prevent overwrite
+                actual_presses = self.selection_sequence(verbose=(self.attempts <= 3))  # Only verbose for first 3 attempts
+                
+                # Re-write RNG seed after A presses to ensure it's still set
+                # (in case game overwrote it during the sequence)
+                self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
+                self.run_frames(5)  # Small delay to let it take effect
 
                 # Check if shiny
                 is_shiny, pv, shiny_value, details = self.check_shiny()
