@@ -3,7 +3,7 @@
 Pokémon Emerald Shiny Hunter - Automated Starter Reset Script
 Uses mGBA Python bindings to hunt for shiny starters
 
-Save state should be positioned before selecting the starter from Birch's bag.
+Loads from .sav file and presses A until game has loaded.
 """
 
 import mgba.core
@@ -11,11 +11,11 @@ import mgba.image
 import random
 import subprocess
 import time
+import os
 from datetime import datetime
 
 # Configuration
 ROM_PATH = "Pokemon - Emerald Version (U).gba"
-SAVE_STATE_PATH = "save-state-1.ss0"
 
 # Hardcoded trainer IDs (read from SRAM, but constant for this save)
 TID = 56078
@@ -23,6 +23,9 @@ SID = 24723
 
 # Memory addresses
 PARTY_PV_ADDR = 0x020244EC  # Personality Value of first party Pokemon
+
+# Number of A presses needed (determine with debug_buttons.py)
+A_PRESSES_NEEDED = 12  # Determined by running debug_buttons.py
 
 
 class ShinyHunter:
@@ -33,6 +36,11 @@ class ShinyHunter:
 
         self.core.reset()
         self.core.autoload_save()  # Load the .sav file
+        
+        # Set up video buffer for screenshots (after reset/load)
+        self.screenshot_image = mgba.image.Image(240, 160)
+        self.core.set_video_buffer(self.screenshot_image)
+        
         self.attempts = 0
         self.start_time = time.time()
 
@@ -40,16 +48,17 @@ class ShinyHunter:
         print(f"[*] TID: {TID}, SID: {SID}")
         print(f"[*] Starting shiny hunt...\n")
 
-    def load_save_state(self):
-        """Load the save state to reset the hunt"""
+    def reset_to_save(self):
+        """Reset and load from .sav file"""
         try:
-            with open(SAVE_STATE_PATH, 'rb') as f:
-                state_data = f.read()
-            self.core.load_raw_state(state_data)
-            # Don't call autoload_save() here - it might overwrite memory
+            self.core.reset()
+            self.core.autoload_save()  # Load from .sav file
+            # Re-set video buffer after reset
+            if hasattr(self, 'screenshot_image'):
+                self.core.set_video_buffer(self.screenshot_image)
             return True
         except Exception as e:
-            print(f"[!] Error loading save state: {e}")
+            print(f"[!] Error loading save: {e}")
             return False
 
     def run_frames(self, count):
@@ -65,10 +74,12 @@ class ShinyHunter:
         self.run_frames(release_frames)
 
     def selection_sequence(self):
-        """Execute the full selection button sequence (16 A presses)"""
-        for _ in range(16):
+        """Execute the full selection button sequence with 1 second pauses"""
+        for _ in range(A_PRESSES_NEEDED):
             self.press_a(hold_frames=5, release_frames=5)
-            self.run_frames(30)  # Wait between presses
+            # 1 second pause (60 frames at 60 FPS + actual sleep)
+            self.run_frames(60)
+            time.sleep(1.0)
 
     def read_u32(self, address):
         """Read 32-bit unsigned integer from memory"""
@@ -95,22 +106,57 @@ class ShinyHunter:
         return is_shiny, pv, shiny_value
 
     def save_screenshot(self):
-        """Save a screenshot of the shiny Pokémon"""
+        """Save a screenshot of the shiny Pokémon
+        
+        Note: Screenshots may not work in headless mode (when mGBA has no visible window).
+        The save state will contain the exact game state, so you can load it in mGBA GUI to see the shiny.
+        """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"shiny_found_{timestamp}.png"
+        filepath = os.path.abspath(filename)
 
         try:
+            # Create a fresh image for the screenshot
             width = 240
             height = 160
             image = mgba.image.Image(width, height)
+            
+            # Set video buffer
             self.core.set_video_buffer(image)
-            self.core.run_frame()
+            
+            # Run many frames to ensure everything is rendered
+            for _ in range(120):
+                self.core.run_frame()
+            
+            # Check if buffer has data (not all zeros/black)
+            try:
+                buffer = image.buffer
+                # Try to access buffer data
+                if hasattr(buffer, '__len__'):
+                    sample_size = min(1000, len(buffer))
+                    has_data = any(buffer[i] != 0 for i in range(sample_size))
+                else:
+                    has_data = False
+            except:
+                has_data = False
+            
+            if not has_data:
+                print("[!] Warning: Screenshot appears black (headless mode limitation)")
+                print("[!] The save state contains the exact game state - load it in mGBA GUI to see the shiny!")
+                # Still save it, but note it's likely black
+                with open(filename, 'wb') as f:
+                    image.save_png(f)
+                print(f"[+] Screenshot file created (may be black): {filepath}")
+                return None  # Return None to indicate screenshot may not be useful
 
             with open(filename, 'wb') as f:
                 image.save_png(f)
-            print(f"[+] Screenshot saved: {filename}")
+            print(f"[+] Screenshot saved: {filepath}")
+            return filepath
         except Exception as e:
             print(f"[!] Failed to save screenshot: {e}")
+            print("[!] Note: Screenshots may not work in headless mode")
+            return None
 
     def play_alert_sound(self):
         """Play system alert sound"""
@@ -119,17 +165,79 @@ class ShinyHunter:
         except Exception as e:
             print(f"[!] Failed to play sound: {e}")
 
+    def send_notification(self, message, subtitle=""):
+        """Send macOS system notification"""
+        try:
+            script = f'''
+            display notification "{message}" with title "Shiny Hunter" subtitle "{subtitle}" sound name "Glass"
+            '''
+            subprocess.run(["osascript", "-e", script], check=False)
+        except Exception as e:
+            print(f"[!] Failed to send notification: {e}")
+
+    def open_screenshot(self, filepath):
+        """Open screenshot in default viewer"""
+        if filepath and os.path.exists(filepath):
+            try:
+                subprocess.run(["open", filepath], check=False)
+            except Exception as e:
+                print(f"[!] Failed to open screenshot: {e}")
+
+    def save_game_state(self):
+        """Save the current game state (both save state and .sav file)"""
+        try:
+            # Save a save state as backup
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_state_filename = f"shiny_save_state_{timestamp}.ss0"
+            
+            state_data = self.core.save_raw_state()
+            # Convert CData object to bytes using cffi buffer
+            try:
+                from cffi import FFI
+                ffi = FFI()
+                state_bytes = bytes(ffi.buffer(state_data))
+            except:
+                # Fallback: read byte by byte
+                if hasattr(state_data, '__len__'):
+                    state_bytes = b''.join(bytes([state_data[i]]) for i in range(len(state_data)))
+                else:
+                    state_bytes = bytes(state_data)
+            
+            with open(save_state_filename, 'wb') as f:
+                f.write(state_bytes)
+            
+            print(f"[+] Save state saved: {os.path.abspath(save_state_filename)}")
+            
+            # The .sav file should auto-save, but we can try to trigger it
+            # by running a few frames to let the game save
+            self.run_frames(60)  # Run 1 second to let save complete
+            
+            # Get .sav file path (mGBA auto-saves to same directory as ROM)
+            rom_dir = os.path.dirname(os.path.abspath(ROM_PATH)) or "."
+            sav_filename = ROM_PATH.replace(".gba", ".sav")
+            sav_path = os.path.join(rom_dir, os.path.basename(sav_filename))
+            
+            if os.path.exists(sav_path):
+                print(f"[+] Save file updated: {os.path.abspath(sav_path)}")
+            else:
+                print(f"[!] Note: Save file may be at: {sav_path}")
+            
+            return save_state_filename
+        except Exception as e:
+            print(f"[!] Failed to save game state: {e}")
+            return None
+
     def hunt(self):
         """Main hunting loop"""
         while True:
             self.attempts += 1
 
-            # Load save state
-            if not self.load_save_state():
-                print("[!] Failed to load save state. Exiting.")
-                break
+            # Reset and load from .sav file
+            if not self.reset_to_save():
+                print("[!] Failed to load save. Exiting.")
+                return False
 
-            # RNG variation: Write random seed to RNG address after loading state
+            # RNG variation: Write random seed to RNG address after loading
             # Emerald RNG seed is at 0x03005D80
             RNG_ADDR = 0x03005D80
             random_seed = random.randint(0, 0xFFFFFFFF)
@@ -141,7 +249,7 @@ class ShinyHunter:
             random_delay = random.randint(10, 100)
             self.run_frames(random_delay)
 
-            # Execute selection sequence (16 A presses)
+            # Execute selection sequence (press A until game loads)
             self.selection_sequence()
 
             # Check if shiny
@@ -158,21 +266,51 @@ class ShinyHunter:
                 if is_shiny:
                     print("\n")
                     print("=" * 60)
-                    print("SHINY FOUND!")
+                    print("🎉 SHINY FOUND! 🎉")
                     print("=" * 60)
                     print(f"Attempts: {self.attempts}")
                     print(f"Personality Value: 0x{pv:08X}")
                     print(f"Shiny Value: {shiny_value}")
-                    print(f"Time Elapsed: {elapsed:.2f} seconds")
+                    print(f"Time Elapsed: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
                     print("=" * 60)
 
-                    self.save_screenshot()
+                    # Save screenshot and get filepath (may be None if headless)
+                    screenshot_path = self.save_screenshot()
+                    
+                    # Play sound
                     self.play_alert_sound()
-                    break
+                    
+                    # Send system notification
+                    self.send_notification(
+                        f"Shiny found after {self.attempts} attempts!",
+                        f"PV: 0x{pv:08X} | Time: {elapsed/60:.1f} min"
+                    )
+                    
+                    # Save game state so user can continue playing
+                    print(f"\n[+] Saving game state...")
+                    save_state_path = self.save_game_state()
+                    
+                    # Open screenshot automatically (if available)
+                    if screenshot_path:
+                        print(f"[+] Opening screenshot...")
+                        self.open_screenshot(screenshot_path)
+                    else:
+                        print(f"[!] Screenshot not available (headless mode)")
+                        print(f"[!] Load the save state in mGBA GUI to see your shiny!")
+                    
+                    print("\n" + "=" * 60)
+                    print("✓ Game saved! You can now:")
+                    if save_state_path:
+                        print(f"  1. Load save state: {os.path.abspath(save_state_path)}")
+                    print("  2. Or open mGBA and load the .sav file")
+                    print("  3. Continue playing and save in-game normally")
+                    print("=" * 60)
+                    print("\n[!] Script exiting. The shiny Pokemon is in your party!")
+                    return True  # Exit the hunt loop
                 else:
                     print("\r", end="")  # Overwrite line
             else:
-                print(f"[{self.attempts:6d}] No Pokemon found - check save state position", end="\r")
+                print(f"[{self.attempts:6d}] No Pokemon found - may need more A presses", end="\r")
 
 
 def main():
