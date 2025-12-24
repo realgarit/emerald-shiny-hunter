@@ -34,8 +34,9 @@ SID = 24723
 # Memory addresses
 PARTY_PV_ADDR = 0x020244EC  # Personality Value of first party Pokemon
 
-# Number of A presses needed (determine with debug_buttons.py)
-A_PRESSES_NEEDED = 12  # Determined by running debug_buttons.py
+# Number of A presses needed (determined by test_fast_presses.py)
+A_PRESSES_NEEDED = 26  # Max presses needed with 15 frame delays (0.25s)
+A_PRESS_DELAY_FRAMES = 15  # Frames to wait between presses (0.25s at 60 FPS)
 
 
 class ShinyHunter:
@@ -134,17 +135,26 @@ class ShinyHunter:
         self.run_frames(release_frames)
 
     def selection_sequence(self, verbose=False):
-        """Execute the full selection button sequence with 1 second pauses"""
+        """Execute the full selection button sequence with optimized delays"""
+        delay_seconds = A_PRESS_DELAY_FRAMES / 60.0
         if verbose:
-            print(f"[*] Pressing A button {A_PRESSES_NEEDED} times with 1 second pauses...")
+            print(f"[*] Pressing A button up to {A_PRESSES_NEEDED} times with {delay_seconds:.2f}s delays...")
         
         for i in range(A_PRESSES_NEEDED):
             self.press_a(hold_frames=5, release_frames=5)
-            # 1 second pause (60 frames at 60 FPS + actual sleep)
-            self.run_frames(60)
-            if verbose and (i + 1) % 3 == 0:  # Print every 3 presses
+            
+            # Check for Pokemon after each press (early exit if found)
+            pv = self.read_u32(PARTY_PV_ADDR)
+            if pv != 0:
+                if verbose:
+                    print(f"    Pokemon found after {i+1} presses!    ")
+                return  # Early exit - Pokemon found
+            
+            # Delay between presses (optimized to 15 frames = 0.25s)
+            self.run_frames(A_PRESS_DELAY_FRAMES)
+            
+            if verbose and (i + 1) % 5 == 0:  # Print every 5 presses
                 print(f"    Press {i+1}/{A_PRESSES_NEEDED}...", end='\r')
-            time.sleep(1.0)
         
         if verbose:
             print(f"    Press {A_PRESSES_NEEDED}/{A_PRESSES_NEEDED} complete!    ")
