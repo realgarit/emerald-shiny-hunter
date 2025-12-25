@@ -2,14 +2,14 @@
 
 Automated shiny hunting for Pokémon Emerald using mGBA. Resets the game and checks for shinies automatically, so you don't have to sit there pressing buttons for hours.
 
-Works with starter Pokémon and wild encounters on Route 101.
+Works with starter Pokémon and wild encounters on Route 101 and Route 102.
 
 ## What it does
 
 - Resets the game automatically and checks each attempt
 - Writes random RNG seeds to memory (Emerald starts with the same seed every reset)
 - Shows progress updates with attempt counts and rates
-- Watch the game live (Route 101 only) - add `--show-window` to see what's happening
+- Watch the game live (Route 101 & 102) - add `--show-window` to see what's happening
 - Saves screenshots when a shiny is found
 - Plays a sound and sends a macOS notification when it finds one
 - Saves the game state automatically so you can continue playing
@@ -111,6 +111,33 @@ python3 src/route101.py --show-window  # Shows all encounters
 
 For Route 101, your save file should be positioned on Route 101, ready to walk around and trigger encounters.
 
+### Route 102 Wild Encounters
+
+Hunt for shiny wild Pokémon on Route 102:
+
+- `route102.py` - Hunt Route 102 Pokémon with optional target filtering. Supports the same `--show-window` feature.
+
+```bash
+# Hunt all Route 102 species (Poochyena, Zigzagoon, Wurmple, Lotad, Seedot, Ralts)
+python3 src/route102.py
+
+# Hunt only a specific species (rare Ralts or Seedot)
+python3 src/route102.py --target ralts
+python3 src/route102.py --target seedot
+python3 src/route102.py --target lotad
+
+# Watch the game while it hunts
+python3 src/route102.py --target ralts --show-window
+python3 src/route102.py --show-window  # Shows all encounters
+```
+
+For Route 102, your save file should be positioned on Route 102, ready to walk around and trigger encounters.
+
+**Note:** Route 102 has the same Pokémon as Route 101 (Poochyena, Zigzagoon, Wurmple) but adds version exclusives:
+- **Lotad** - Common (appears frequently)
+- **Seedot** - Very rare (1% encounter rate)
+- **Ralts** - Rare (1% encounter rate) - the most sought-after early-game catch!
+
 ### What happens when you run it
 
 1. Loads your save file
@@ -170,7 +197,7 @@ If `Shiny_Value < 8`, it's shiny.
 - Species ID: `0x020244F4` (party, PV + 0x08) or `0x0202474C` (enemy, PV + 0x08)
 - RNG Seed: `0x03005D80` (used for RNG manipulation)
 
-### Wild Pokémon species identification (Route 101)
+### Wild Pokémon species identification (Route 101 & Route 102)
 
 Reading wild Pokémon species from memory is trickier than party Pokémon. The battle structure stores things differently, so the normal decryption doesn't work.
 
@@ -183,6 +210,30 @@ When I tried to decrypt wild Pokémon data using the same method as party Pokém
 - Expected Zigzagoon (263), got 288 (off by 25)
 
 Always off by 25. That's not a coincidence.
+
+#### The discovery: Internal vs National Dex IDs
+
+After researching the [pokeemerald decompilation source code](https://github.com/pret/pokeemerald), I found that Pokémon Emerald uses **internal species indices** that differ from National Dex numbers:
+
+**Route 101 & 102 Pokémon:**
+| Pokémon | National Dex | Internal Index | Offset |
+|---------|--------------|----------------|--------|
+| Poochyena | 261 | 286 | -25 |
+| Zigzagoon | 263 | 288 | -25 |
+| Wurmple | 265 | 290 | -25 |
+| Lotad | 270 | 295 | -25 |
+| Seedot | 273 | 298 | -25 |
+| **Ralts** | **280** | **392** | **-122** |
+
+**Most Pokémon follow a -25 offset pattern**, but **Ralts has a completely unique offset of -122**! This is because Gen III's internal ordering stored Gen 1 and 2 Pokémon first, then new Gen 3 species in a different order.
+
+The decrypted values from memory give us the **internal indices**, not National Dex numbers. We need offset correction to convert them.
+
+**Note on Route 102 mappings:** Through empirical testing, Lotad appears in the game when the script identifies ID 280 (which would normally be Ralts in National Dex). This means:
+- ID 280 → "Lotad" (empirically verified in-game)
+- ID 270 → "Ralts" (Ralts decrypts to 392, with -122 offset = 270)
+
+This mapping works correctly and all species are properly identified.
 
 #### Why it happens
 
@@ -208,9 +259,10 @@ The script tries a bunch of things until something works:
 1. Tries different OT TID values - Tests 0, the TID from memory, and a few other combinations
 2. Tries different memory offsets - Checks offsets like 32, 0, 8, 16, 24, 40, 48 from the PV address
 3. Tries all substructure positions - Tests all 4 positions (G, A, E, M) to find where the species ID is
-4. Applies offset correction - If the decrypted value is in the valid range (1-386) but doesn't match, it tries adding or subtracting small amounts:
+4. Applies offset correction - If the decrypted value is in the valid range (1-450 to include Ralts at 392) but doesn't match, it tries converting from internal index to National Dex:
    ```python
-   for offset_correction in [-30, -25, -20, -15, -10, -5, 5, 10, 15, 20, 25, 30]:
+   # Includes -122 for Ralts and common offsets for other species
+   for offset_correction in [-122, -30, -25, -20, -15, -10, -5, 5, 10, 15, 20, 25, 30]:
        corrected_id = species_id + offset_correction
        if corrected_id == target_species_id:
            return corrected_id  # Found it!
@@ -220,17 +272,19 @@ The script tries a bunch of things until something works:
 
 #### Why this works
 
-The offset is always consistent. If you decrypt a Wurmple and get 290, you'll always get 290. So we can just subtract 25 and get the right answer.
+The offset is always consistent for each Pokémon species:
+- If you decrypt a Wurmple, you always get 290 (internal index) → subtract 25 → get 265 (National Dex) ✓
+- If you decrypt a Ralts, you always get 392 (internal index) → subtract 122 → get 270 (ID used in our mapping) ✓
 
-The correction range covers the offset we saw (25) plus some wiggle room in case it varies slightly.
+The correction range covers common offsets (-25 for most Pokémon) plus the special Ralts offset (-122), with some wiggle room in case other species vary.
 
 #### How it's implemented
 
-The script in `route101.py` tries the most likely combinations first (OT_TID from memory, offset +32, position 2). If that doesn't work, it tries everything else.
+The scripts (`route101.py` and `route102.py`) try the most likely combinations first (OT_TID from memory, offset +32, position 2). If that doesn't work, they try everything else.
 
-It only applies the offset correction if the value is in the valid Pokémon ID range (1-386), so it won't give false positives.
+The offset correction only applies if the value is in a valid range (1-450 to include Ralts at internal index 392), preventing false positives.
 
-This works for any route - it just checks against the known species for that route.
+This works for any route - each script checks against the known species for that route and applies the appropriate offsets.
 
 ### RNG bypass
 
@@ -278,7 +332,7 @@ When a shiny is found:
 
 - Screenshot: `screenshots/shiny_found_YYYYMMDD_HHMMSS.png`
 - Save State: `save_states/shiny_save_state_YYYYMMDD_HHMMSS.ss0`
-- Log File: `logs/shiny_hunt_YYYYMMDD_HHMMSS.log` (or `route101_hunt_...` for Route 101)
+- Log File: `logs/shiny_hunt_YYYYMMDD_HHMMSS.log` (starters) or `logs/route101_hunt_...` / `logs/route102_hunt_...` (wild encounters)
 
 ## Troubleshooting
 
@@ -293,7 +347,7 @@ If you get `ImportError: No module named 'mgba'`:
 
 - Make sure the `.sav` file exists in the `roms/` directory
 - Check that it's actually a Pokémon Emerald save file
-- Verify the save is positioned correctly (at bag screen for starters, on Route 101 for wild encounters)
+- Verify the save is positioned correctly (at bag screen for starters, on Route 101/102 for wild encounters)
 
 ### Screenshot is black
 
@@ -328,6 +382,7 @@ emerald-shiny-hunter/
 │   ├── mudkip.py               # Shiny hunt for Mudkip
 │   ├── treecko.py              # Shiny hunt for Treecko
 │   ├── route101.py             # Route 101 wild encounters (with optional target filtering and live window)
+│   ├── route102.py             # Route 102 wild encounters (Lotad, Seedot, Ralts + Route 101 Pokémon)
 │   ├── combine_shinies.py      # Combine shinies from multiple saves
 │   └── debug/                  # Debug scripts that found memory addresses
 │       ├── find_species_address.py

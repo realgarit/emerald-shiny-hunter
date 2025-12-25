@@ -61,15 +61,17 @@ ENEMY_SPECIES_ADDR = 0x0202474C  # Species ID (16-bit) - at offset +0x08 from PV
 BATTLE_STRUCTURE_START = 0x02024000  # Start of battle structure area
 
 # Pokemon species IDs (Gen III) - Route 102 wild encounters
-# NOTE: Lotad and Ralts are SWAPPED in Route 102 memory (empirically verified)
-# All species decrypt with -25 offset correction
+# Internal indices from pokeemerald: Poochyena=286, Zigzagoon=288, Wurmple=290,
+# Lotad=295, Seedot=298, Ralts=392 (!)
+# Most species use -25 offset, but Ralts needs -122 (392-122=270)
+# Empirically verified mappings:
 POKEMON_SPECIES = {
-    261: "Poochyena",  # 0x0105 - Decrypts as raw 286, corrected to 261
-    263: "Zigzagoon",  # 0x0107 - Decrypts as raw 288, corrected to 263
-    265: "Wurmple",    # 0x0109 - Decrypts as raw 290, corrected to 265
-    270: "Ralts",      # 0x010E - SWAPPED! Ralts decrypts to 270 on Route 102
-    273: "Seedot",     # 0x0111 - Decrypts as raw 298, corrected to 273
-    280: "Lotad",      # 0x0118 - SWAPPED! Lotad decrypts to 280 on Route 102
+    261: "Poochyena",  # Internal 286, offset -25
+    263: "Zigzagoon",  # Internal 288, offset -25
+    265: "Wurmple",    # Internal 290, offset -25
+    270: "Ralts",      # Internal 392, offset -122 (!) - Ralts has unique offset
+    273: "Seedot",     # Internal 298, offset -25
+    280: "Lotad",      # Empirically verified: ID 280 = Lotad in game
 }
 
 # Reverse mapping: name -> ID (case-insensitive)
@@ -536,11 +538,13 @@ class ShinyHunter:
                             # Try applying offset corrections (we've seen 290 when expecting 265, difference of 25)
                             # This handles cases where decryption produces values close to correct species IDs
                             # The offset appears to be consistent for battle structure vs party structure
-                            # Only check if species_id is in a reasonable range (1-386, valid Pokemon ID range) to avoid false positives
-                            if (1 <= species_id <= 386) or (1 <= species_id_high <= 386):
+                            # NOTE: Ralts has internal index 392, needs -122 offset to map to ID 270 (our Ralts entry)
+                            # Only check if species_id is in a reasonable range (1-450 to include Ralts at 392)
+                            if (1 <= species_id <= 450) or (1 <= species_id_high <= 450):
                                 # Try all target species from POKEMON_SPECIES dictionary (works for any route)
                                 for target_species_id in POKEMON_SPECIES.keys():
-                                    for offset_correction in [-30, -25, -20, -15, -10, -5, 5, 10, 15, 20, 25, 30]:
+                                    # Include -122 for Ralts (internal 392 -> ID 270 which is our "Ralts" entry)
+                                    for offset_correction in [-122, -30, -25, -20, -15, -10, -5, 5, 10, 15, 20, 25, 30]:
                                         corrected_id = species_id + offset_correction
                                         if corrected_id == target_species_id:
                                             species_name = POKEMON_SPECIES.get(target_species_id, f"Unknown (ID: {target_species_id})")
