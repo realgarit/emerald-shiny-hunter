@@ -351,11 +351,12 @@ class ShinyHunter:
                 print(f"    [DEBUG] Will try OT_TID values: {ot_tid_values}")
             
             # Try different OT TID values (0 for wild Pokemon, or value from memory)
+            # Optimized: Try known working combination FIRST (OT_TID=56078, offset +32, pos 2)
+            # This is the combination that works for Route 101, so we prioritize it
             for ot_tid in ot_tid_values:
-                # Try different encrypted data offsets - enemy party might use different layout
-                # Standard offset is +32 bytes, but battle structure might be different
-                # Also try negative offsets in case encrypted data starts before PV
-                for data_offset in [32, 0, 8, 16, 24, 40, 48, -8, -4, 4, 12, 20, 28, 36, 44, 52, 56, 60, 64]:
+                # Prioritize offset +32 (known working) first, then try others
+                offsets_to_try = [32] + [o for o in [0, 8, 16, 24, 40, 48, -8, -4, 4, 12, 20, 28, 36, 44, 52, 56, 60, 64] if o != 32]
+                for data_offset in offsets_to_try:
                     try:
                         data_start = pv_addr + data_offset
                         
@@ -364,8 +365,10 @@ class ShinyHunter:
                         order = self.get_substructure_order(pv)  # Returns string like "GAEM"
                         
                         # Try all 4 substructure positions (G, A, E, M) to find where species is
+                        # Optimized: Try position 2 first (known working position for Route 101)
                         # Growth substructure (G) contains species ID, but let's try all positions
-                        for substructure_pos in range(4):
+                        positions_to_try = [2] + [p for p in range(4) if p != 2]  # Try pos 2 first (known working)
+                        for substructure_pos in positions_to_try:
                             # Step B: Calculate offset (each substructure is 12 bytes)
                             offset = substructure_pos * 12
                             
@@ -492,37 +495,22 @@ class ShinyHunter:
             return species_id, species_name
         
         # If decryption failed, scan nearby addresses for Route 101 species
-        # This might find the species if it's stored unencrypted somewhere in battle structure
+        # Optimized: Skip memory scanning since decryption with offset correction works reliably
+        # Only scan if we're debugging (first 3 attempts) - this saves significant time
         if hasattr(self, 'attempts') and self.attempts <= 3:
             print(f"    [DEBUG] Decryption failed, scanning memory for unencrypted species ID...")
-        
-        # First, scan around the enemy party structure
-        for offset in range(-0x20, 0x200, 2):  # Scan from -32 to +512 bytes in 2-byte steps
-            try:
-                addr = ENEMY_PV_ADDR + offset
-                species_id = self.read_u16(addr)
-                if species_id in POKEMON_SPECIES:
-                    species_name = POKEMON_SPECIES.get(species_id, f"Unknown (ID: {species_id})")
-                    if hasattr(self, 'attempts') and self.attempts <= 3:
+            
+            # First, scan around the enemy party structure (reduced range for speed)
+            for offset in range(-0x20, 0x100, 2):  # Scan from -32 to +256 bytes (reduced from +512)
+                try:
+                    addr = ENEMY_PV_ADDR + offset
+                    species_id = self.read_u16(addr)
+                    if species_id in POKEMON_SPECIES:
+                        species_name = POKEMON_SPECIES.get(species_id, f"Unknown (ID: {species_id})")
                         print(f"  [+] Found unencrypted species at offset +0x{offset:02X} (0x{addr:08X}): {species_name} (ID: {species_id})")
-                    return species_id, species_name
-            except:
-                continue
-        
-        # Also scan the broader battle structure area - maybe species is in a different structure
-        if hasattr(self, 'attempts') and self.attempts <= 3:
-            print(f"    [DEBUG] Scanning battle structure area (0x02024000-0x02025000)...")
-        for offset in range(0, 0x1000, 2):  # Scan 4KB area
-            try:
-                addr = BATTLE_STRUCTURE_START + offset
-                species_id = self.read_u16(addr)
-                if species_id in POKEMON_SPECIES:
-                    species_name = POKEMON_SPECIES.get(species_id, f"Unknown (ID: {species_id})")
-                    if hasattr(self, 'attempts') and self.attempts <= 3:
-                        print(f"  [+] Found unencrypted species in battle structure at 0x{addr:08X}: {species_name} (ID: {species_id})")
-                    return species_id, species_name
-            except:
-                continue
+                        return species_id, species_name
+                except:
+                    continue
         
         # If still not found, decryption is likely required but we're not doing it correctly
         # Return unknown with info about what we tried
