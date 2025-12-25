@@ -63,18 +63,14 @@ ENEMY_SPECIES_ADDR = 0x0202474C  # Species ID (16-bit) - at offset +0x08 from PV
 BATTLE_STRUCTURE_START = 0x02024000  # Start of battle structure area
 
 # Pokemon species IDs (Gen III) - Route 101 wild encounters
-# Filtered version: Only hunt Poochyena and Zigzagoon (skip Wurmple)
 POKEMON_SPECIES = {
     261: "Poochyena",  # 0x0105
     263: "Zigzagoon",  # 0x0107
-    265: "Wurmple",    # 0x0109 (will be skipped)
+    265: "Wurmple",    # 0x0109
 }
 
-# Target species for shiny hunting (exclude Wurmple)
-TARGET_SPECIES = {
-    261: "Poochyena",
-    263: "Zigzagoon",
-}
+# Reverse mapping: name -> ID (case-insensitive)
+SPECIES_NAME_TO_ID = {name.lower(): species_id for species_id, name in POKEMON_SPECIES.items()}
 
 # Loading sequence: Press A 15 times with 20-frame delay between presses
 A_PRESSES_LOADING = 15  # A presses to get through loading screens
@@ -95,13 +91,30 @@ KEY_RIGHT = 16  # bit 4
 
 
 class ShinyHunter:
-    def __init__(self, suppress_debug=True, show_window=False):
+    def __init__(self, suppress_debug=True, show_window=False, target_species=None):
         # Set up logging
         self.log_dir = PROJECT_ROOT / "logs"
         self.log_dir.mkdir(exist_ok=True)
         
+        # Set up target species filtering
+        if target_species:
+            # Convert species name to ID
+            target_lower = target_species.lower()
+            if target_lower not in SPECIES_NAME_TO_ID:
+                raise ValueError(f"Invalid target species: {target_species}. Must be one of: {', '.join(POKEMON_SPECIES.values())}")
+            self.target_species_id = SPECIES_NAME_TO_ID[target_lower]
+            self.target_species_name = POKEMON_SPECIES[self.target_species_id]
+            self.target_species_ids = {self.target_species_id}  # Set of target IDs
+            log_suffix = f"_{self.target_species_name.lower()}"
+        else:
+            # Default: hunt all Route 101 species
+            self.target_species_id = None
+            self.target_species_name = None
+            self.target_species_ids = set(POKEMON_SPECIES.keys())  # All species
+            log_suffix = "_all"
+        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file = self.log_dir / f"route101_filtered_hunt_{timestamp}.log"
+        self.log_file = self.log_dir / f"route101_filtered_hunt{log_suffix}_{timestamp}.log"
         
         # Create a Tee class to write to both console and file
         class Tee:
@@ -163,7 +176,10 @@ class ShinyHunter:
         print(f"[*] Shiny Formula: (TID ^ SID) ^ (PV_low ^ PV_high) < 8")
         print(f"[*] TID ^ SID = {TID} ^ {SID} = {TID ^ SID}")
         print(f"[*] Monitoring Enemy Party at 0x{ENEMY_PV_ADDR:08X}")
-        print(f"[*] Target species: Poochyena, Zigzagoon (Wurmple will be skipped)")
+        if self.target_species_name:
+            print(f"[*] Target species: {self.target_species_name} only (others will be skipped)")
+        else:
+            print(f"[*] Target species: {', '.join(POKEMON_SPECIES.values())} (all species)")
         print(f"[*] Starting shiny hunt on Route 101...\n")
     
     def _update_display_window(self):
@@ -821,7 +837,10 @@ class ShinyHunter:
 
                 print(f"\n[Attempt {self.attempts}] Starting new reset...")
                 print(f"  RNG Seed: 0x{random_seed:08X}, Delay: {random_delay} frames")
-                print(f"  Target: Poochyena & Zigzagoon only (skipping Wurmple)")
+                if self.target_species_name:
+                    print(f"  Target: {self.target_species_name} only (skipping others)")
+                else:
+                    print(f"  Target: All Route 101 species")
 
                 # Step 1: Execute loading sequence (15 A presses)
                 verbose = (self.attempts <= 3)  # Only verbose for first 3 attempts
@@ -864,15 +883,18 @@ class ShinyHunter:
                 # Get Pokemon species
                 species_id, species_name = self.get_pokemon_species()
 
-                # FILTERED: Skip Wurmple - only check Poochyena and Zigzagoon for shinies
-                if species_id == 265:  # Wurmple
+                # FILTERED: Skip non-target species
+                if species_id not in self.target_species_ids:
                     print(f"\n[Attempt {self.attempts}] Pokemon found!")
                     print(f"  Species: {species_name} (ID: {species_id}) - SKIPPING (not target species)")
-                    print(f"  Resetting and continuing hunt for Poochyena/Zigzagoon...")
+                    if self.target_species_name:
+                        print(f"  Resetting and continuing hunt for {self.target_species_name}...")
+                    else:
+                        print(f"  Resetting and continuing hunt...")
                     # Reset and continue (don't check for shiny)
                     continue
 
-                # Only check shiny if it's a target species (Poochyena or Zigzagoon)
+                # Only check shiny if it's a target species
                 is_shiny, pv, shiny_value, details = self.check_shiny()
 
                 # Calculate rate
@@ -977,8 +999,21 @@ class ShinyHunter:
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description="Pokémon Emerald Shiny Hunter - Route 101 (Filtered - No Wurmple)",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description="Pokémon Emerald Shiny Hunter - Route 101 (Filtered)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"Available species: {', '.join(POKEMON_SPECIES.values())}\n"
+               "Examples:\n"
+               "  python route101_filtered.py --target zigzagoon\n"
+               "  python route101_filtered.py --target poochyena --show-window\n"
+               "  python route101_filtered.py  # Hunt all species"
+    )
+    parser.add_argument(
+        '--target',
+        type=str,
+        choices=[name.lower() for name in POKEMON_SPECIES.values()],
+        metavar='SPECIES',
+        help=f'Target species to hunt (one of: {", ".join(POKEMON_SPECIES.values())}). '
+             f'If not specified, hunts all Route 101 species.'
     )
     parser.add_argument(
         '--show-window',
@@ -990,7 +1025,7 @@ def main():
     hunter = None
     try:
         # Suppress GBA debug output by default
-        hunter = ShinyHunter(suppress_debug=True, show_window=args.show_window)
+        hunter = ShinyHunter(suppress_debug=True, show_window=args.show_window, target_species=args.target)
         hunter.hunt()
     except KeyboardInterrupt:
         print("\n[!] Hunt interrupted by user.")
