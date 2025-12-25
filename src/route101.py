@@ -428,26 +428,28 @@ class ShinyHunter:
                                 return species_id_high, species_name
                             
                             # Try applying offset corrections (we've seen 290 when expecting 265, difference of 25)
-                            # Check if species_id is close to Route 101 species with various offsets
-                            # Only check if species_id is in a reasonable range (200-300) to avoid false positives
-                            if 200 <= species_id <= 300 or 200 <= species_id_high <= 300:
-                                for route101_id in [261, 263, 265]:
+                            # This handles cases where decryption produces values close to correct species IDs
+                            # The offset appears to be consistent for battle structure vs party structure
+                            # Only check if species_id is in a reasonable range (1-386, valid Pokemon ID range) to avoid false positives
+                            if (1 <= species_id <= 386) or (1 <= species_id_high <= 386):
+                                # Try all target species from POKEMON_SPECIES dictionary (works for any route)
+                                for target_species_id in POKEMON_SPECIES.keys():
                                     for offset_correction in [-30, -25, -20, -15, -10, -5, 5, 10, 15, 20, 25, 30]:
                                         corrected_id = species_id + offset_correction
-                                        if corrected_id == route101_id:
-                                            species_name = POKEMON_SPECIES.get(route101_id, f"Unknown (ID: {route101_id})")
+                                        if corrected_id == target_species_id:
+                                            species_name = POKEMON_SPECIES.get(target_species_id, f"Unknown (ID: {target_species_id})")
                                             if hasattr(self, 'attempts') and self.attempts <= 3:
                                                 substructure_name = order[substructure_pos]
-                                                print(f"  [+] Found species (with offset correction {offset_correction:+d}) with OT_TID={ot_tid}, offset +{data_offset}, pos {substructure_pos} ({substructure_name}): {species_name} (ID: {route101_id}, raw={species_id})")
-                                            return route101_id, species_name
+                                                print(f"  [+] Found species (with offset correction {offset_correction:+d}) with OT_TID={ot_tid}, offset +{data_offset}, pos {substructure_pos} ({substructure_name}): {species_name} (ID: {target_species_id}, raw={species_id})")
+                                            return target_species_id, species_name
                                         
                                         corrected_id_high = species_id_high + offset_correction
-                                        if corrected_id_high == route101_id:
-                                            species_name = POKEMON_SPECIES.get(route101_id, f"Unknown (ID: {route101_id})")
+                                        if corrected_id_high == target_species_id:
+                                            species_name = POKEMON_SPECIES.get(target_species_id, f"Unknown (ID: {target_species_id})")
                                             if hasattr(self, 'attempts') and self.attempts <= 3:
                                                 substructure_name = order[substructure_pos]
-                                                print(f"  [+] Found species (upper 16 bits, offset correction {offset_correction:+d}) with OT_TID={ot_tid}, offset +{data_offset}, pos {substructure_pos} ({substructure_name}): {species_name} (ID: {route101_id}, raw={species_id_high})")
-                                            return route101_id, species_name
+                                                print(f"  [+] Found species (upper 16 bits, offset correction {offset_correction:+d}) with OT_TID={ot_tid}, offset +{data_offset}, pos {substructure_pos} ({substructure_name}): {species_name} (ID: {target_species_id}, raw={species_id_high})")
+                                            return target_species_id, species_name
                     except Exception as e:
                         if hasattr(self, 'attempts') and self.attempts <= 3 and data_offset == 32 and ot_tid == 0:
                             print(f"    [DEBUG] Error with OT_TID={ot_tid}, offset +{data_offset}: {e}")
