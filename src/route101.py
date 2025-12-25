@@ -4,10 +4,11 @@ Pokémon Emerald Shiny Hunter - Route 101
 Uses mGBA Python bindings to hunt for shiny wild Pokémon on Route 101
 
 Loads from .sav file and presses buttons to trigger wild encounters.
-Identifies Pokemon species from memory to verify which Pokémon was encountered.
+Identifies Pokemon species from memory and can filter by target species.
 
 Features:
 - Identifies Pokemon species from memory (Poochyena, Zigzagoon, or Wurmple)
+- Optional target species filtering via --target flag (hunt specific Pokémon only)
 - Error handling with automatic retry (up to 3 consecutive errors)
 - Periodic status updates every 10 attempts or 5 minutes
 - Automatic recovery on errors (resets core and reloads save)
@@ -25,6 +26,10 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+import cv2
+import numpy as np
+from cffi import FFI
+import argparse
 
 # Get project root directory (parent of src/)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -62,6 +67,9 @@ POKEMON_SPECIES = {
     265: "Wurmple",    # 0x0109
 }
 
+# Reverse mapping: name -> ID (case-insensitive)
+SPECIES_NAME_TO_ID = {name.lower(): species_id for species_id, name in POKEMON_SPECIES.items()}
+
 # Loading sequence: Press A 15 times with 20-frame delay between presses
 A_PRESSES_LOADING = 15  # A presses to get through loading screens
 A_LOADING_DELAY_FRAMES = 20  # Wait ~0.33s between A presses during loading
@@ -81,13 +89,30 @@ KEY_RIGHT = 16  # bit 4
 
 
 class ShinyHunter:
-    def __init__(self, suppress_debug=True):
+    def __init__(self, suppress_debug=True, show_window=False, target_species=None):
         # Set up logging
         self.log_dir = PROJECT_ROOT / "logs"
         self.log_dir.mkdir(exist_ok=True)
         
+        # Set up target species filtering
+        if target_species:
+            # Convert species name to ID
+            target_lower = target_species.lower()
+            if target_lower not in SPECIES_NAME_TO_ID:
+                raise ValueError(f"Invalid target species: {target_species}. Must be one of: {', '.join(POKEMON_SPECIES.values())}")
+            self.target_species_id = SPECIES_NAME_TO_ID[target_lower]
+            self.target_species_name = POKEMON_SPECIES[self.target_species_id]
+            self.target_species_ids = {self.target_species_id}  # Set of target IDs
+            log_suffix = f"_{self.target_species_name.lower()}"
+        else:
+            # Default: hunt all Route 101 species
+            self.target_species_id = None
+            self.target_species_name = None
+            self.target_species_ids = set(POKEMON_SPECIES.keys())  # All species
+            log_suffix = "_all"
+        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file = self.log_dir / f"route101_hunt_{timestamp}.log"
+        self.log_file = self.log_dir / f"route101_hunt{log_suffix}_{timestamp}.log"
         
         # Create a Tee class to write to both console and file
         class Tee:
@@ -126,6 +151,20 @@ class ShinyHunter:
         self.screenshot_image = mgba.image.Image(240, 160)
         self.core.set_video_buffer(self.screenshot_image)
         
+        # Run a few frames to populate the buffer
+        for _ in range(10):
+            self.core.run_frame()
+        
+        # Set up OpenCV visualization window (optional)
+        self.show_window = show_window
+        if self.show_window:
+            self.window_name = "Shiny Hunter"
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(self.window_name, 480, 320)
+        self.frame_counter = 0  # For frame skip logic
+        self.frame_skip = 5  # Update window every 5th frame
+        self.debug_display = True  # Enable debug output for first few frames
+        
         self.attempts = 0
         self.start_time = time.time()
 
@@ -135,11 +174,60 @@ class ShinyHunter:
         print(f"[*] Shiny Formula: (TID ^ SID) ^ (PV_low ^ PV_high) < 8")
         print(f"[*] TID ^ SID = {TID} ^ {SID} = {TID ^ SID}")
         print(f"[*] Monitoring Enemy Party at 0x{ENEMY_PV_ADDR:08X}")
-        print(f"[*] Target species: {', '.join(POKEMON_SPECIES.values())}")
+        if self.target_species_name:
+            print(f"[*] Target species: {self.target_species_name} only (others will be skipped)")
+        else:
+            print(f"[*] Target species: {', '.join(POKEMON_SPECIES.values())} (all species)")
         print(f"[*] Starting shiny hunt on Route 101...\n")
     
+    def _update_display_window(self):
+        """Update the OpenCV display window with current frame buffer"""
+        try:
+            if not hasattr(self, 'screenshot_image') or not hasattr(self.screenshot_image, 'buffer'):
+                return
+            
+            # The 'buffer' here is a CFFI CData pointer
+            raw_buffer = self.screenshot_image.buffer
+            expected_size = 240 * 160 * 4
+            
+            # --- CRITICAL FIX FOR MAC CFFI ERROR ---
+            try:
+                ffi = FFI()
+                # Wrap the raw C pointer into a Python-accessible buffer
+                buffer_bytes = bytes(ffi.buffer(raw_buffer, expected_size))
+            except Exception:
+                # Fallback for different mGBA versions
+                try:
+                    buffer_bytes = bytes(raw_buffer)
+                except:
+                    return  # Can't convert buffer, skip this frame
+            # ----------------------------------------
+
+            # Convert to numpy array
+            np_buffer = np.frombuffer(buffer_bytes, dtype=np.uint8, count=expected_size)
+            rgba_frame = np_buffer.reshape(160, 240, 4)
+            
+            # Convert RGBA to BGR for OpenCV
+            bgr_frame = cv2.cvtColor(rgba_frame, cv2.COLOR_RGBA2BGR)
+            
+            # Scale and Display
+            scaled_frame = cv2.resize(bgr_frame, (480, 320), interpolation=cv2.INTER_NEAREST)
+            cv2.imshow(self.window_name, scaled_frame)
+            
+        except Exception as e:
+            # Prevent console spam, but keep for debugging if needed
+            # print(f"Display error: {e}")
+            pass
+    
     def cleanup(self):
-        """Restore stdout/stderr and close log file"""
+        """Restore stdout/stderr, close log file, and close OpenCV windows"""
+        # Close OpenCV windows if they were created
+        if self.show_window:
+            try:
+                cv2.destroyAllWindows()
+            except:
+                pass
+        
         if hasattr(self, 'log_file_handle') and self.log_file_handle:
             sys.stdout = self.original_stdout
             self.log_file_handle.close()
@@ -169,6 +257,13 @@ class ShinyHunter:
         """Advance emulation by specified number of frames"""
         for _ in range(count):
             self.core.run_frame()
+            # Update visualization window (with frame skip for performance) if enabled
+            if self.show_window:
+                self.frame_counter += 1
+                if self.frame_counter % self.frame_skip == 0:
+                    self._update_display_window()
+                # Critical for macOS: call waitKey to prevent window freezing
+                cv2.waitKey(1)
 
     def press_a(self, hold_frames=5, release_frames=5):
         """Press and release A button"""
@@ -740,6 +835,10 @@ class ShinyHunter:
 
                 print(f"\n[Attempt {self.attempts}] Starting new reset...")
                 print(f"  RNG Seed: 0x{random_seed:08X}, Delay: {random_delay} frames")
+                if self.target_species_name:
+                    print(f"  Target: {self.target_species_name} only (skipping others)")
+                else:
+                    print(f"  Target: All Route 101 species")
 
                 # Step 1: Execute loading sequence (15 A presses)
                 verbose = (self.attempts <= 3)  # Only verbose for first 3 attempts
@@ -782,7 +881,18 @@ class ShinyHunter:
                 # Get Pokemon species
                 species_id, species_name = self.get_pokemon_species()
 
-                # Check if shiny
+                # FILTERED: Skip non-target species
+                if species_id not in self.target_species_ids:
+                    print(f"\n[Attempt {self.attempts}] Pokemon found!")
+                    print(f"  Species: {species_name} (ID: {species_id}) - SKIPPING (not target species)")
+                    if self.target_species_name:
+                        print(f"  Resetting and continuing hunt for {self.target_species_name}...")
+                    else:
+                        print(f"  Resetting and continuing hunt...")
+                    # Reset and continue (don't check for shiny)
+                    continue
+
+                # Only check shiny if it's a target species
                 is_shiny, pv, shiny_value, details = self.check_shiny()
 
                 # Calculate rate
@@ -885,10 +995,35 @@ class ShinyHunter:
 
 
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Pokémon Emerald Shiny Hunter - Route 101",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"Available species: {', '.join(POKEMON_SPECIES.values())}\n"
+               "Examples:\n"
+               "  python route101.py --target zigzagoon\n"
+               "  python route101.py --target poochyena --show-window\n"
+               "  python route101.py  # Hunt all species"
+    )
+    parser.add_argument(
+        '--target',
+        type=str,
+        choices=[name.lower() for name in POKEMON_SPECIES.values()],
+        metavar='SPECIES',
+        help=f'Target species to hunt (one of: {", ".join(POKEMON_SPECIES.values())}). '
+             f'If not specified, hunts all Route 101 species.'
+    )
+    parser.add_argument(
+        '--show-window',
+        action='store_true',
+        help='Display a live visualization window showing the game while hunting'
+    )
+    args = parser.parse_args()
+    
     hunter = None
     try:
         # Suppress GBA debug output by default
-        hunter = ShinyHunter(suppress_debug=True)
+        hunter = ShinyHunter(suppress_debug=True, show_window=args.show_window, target_species=args.target)
         hunter.hunt()
     except KeyboardInterrupt:
         print("\n[!] Hunt interrupted by user.")

@@ -92,12 +92,19 @@ python3 src/treecko.py
 
 Hunt for shiny wild Pokémon on Route 101:
 
-- `route101.py` - Checks all Route 101 Pokémon (Poochyena, Zigzagoon, Wurmple)
-- `route101_filtered.py` - Only checks Poochyena and Zigzagoon, skips Wurmple
+- `route101.py` - Hunt Route 101 Pokémon with optional target filtering
 
 ```bash
+# Hunt all Route 101 species (Poochyena, Zigzagoon, Wurmple)
 python3 src/route101.py
-python3 src/route101_filtered.py
+
+# Hunt only a specific species
+python3 src/route101.py --target zigzagoon
+python3 src/route101.py --target poochyena
+python3 src/route101.py --target wurmple
+
+# With visualization window
+python3 src/route101.py --target zigzagoon --show-window
 ```
 
 For Route 101, your save file should be positioned on Route 101, ready to walk around and trigger encounters.
@@ -254,8 +261,7 @@ emerald-shiny-hunter/
 │   ├── torchic.py              # Shiny hunt for Torchic
 │   ├── mudkip.py               # Shiny hunt for Mudkip
 │   ├── treecko.py              # Shiny hunt for Treecko
-│   ├── route101.py             # Route 101 wild encounters (all species)
-│   ├── route101_filtered.py    # Route 101 (Poochyena/Zigzagoon only)
+│   ├── route101.py             # Route 101 wild encounters (with optional target filtering)
 │   ├── combine_shinies.py      # Combine shinies from multiple saves
 │   └── debug/                  # Debug scripts that found memory addresses
 │       ├── find_species_address.py
