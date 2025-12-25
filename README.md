@@ -9,6 +9,7 @@ Works with starter Pokémon and wild encounters on Route 101.
 - Resets the game automatically and checks each attempt
 - Writes random RNG seeds to memory (Emerald starts with the same seed every reset)
 - Shows progress updates with attempt counts and rates
+- Watch the game live (Route 101 only) - add `--show-window` to see what's happening
 - Saves screenshots when a shiny is found
 - Plays a sound and sends a macOS notification when it finds one
 - Saves the game state automatically so you can continue playing
@@ -92,7 +93,7 @@ python3 src/treecko.py
 
 Hunt for shiny wild Pokémon on Route 101:
 
-- `route101.py` - Hunt Route 101 Pokémon with optional target filtering
+- `route101.py` - Hunt Route 101 Pokémon with optional target filtering. You can watch it live with `--show-window`
 
 ```bash
 # Hunt all Route 101 species (Poochyena, Zigzagoon, Wurmple)
@@ -103,8 +104,9 @@ python3 src/route101.py --target zigzagoon
 python3 src/route101.py --target poochyena
 python3 src/route101.py --target wurmple
 
-# With visualization window
+# Watch the game while it hunts
 python3 src/route101.py --target zigzagoon --show-window
+python3 src/route101.py --show-window  # Shows all encounters
 ```
 
 For Route 101, your save file should be positioned on Route 101, ready to walk around and trigger encounters.
@@ -117,6 +119,8 @@ For Route 101, your save file should be positioned on Route 101, ready to walk a
 4. Reads the Pokémon data from memory and checks if it's shiny
 5. If shiny: saves screenshot, plays sound, sends notification, saves game state, stops
 6. If not shiny: reloads and tries again
+
+For Route 101, you can add `--show-window` to watch the game while it hunts. The window updates every 5th frame so it doesn't slow things down, but you can still see what's happening.
 
 ### Progress output
 
@@ -165,6 +169,68 @@ If `Shiny_Value < 8`, it's shiny.
 - Personality Value: `0x020244EC` (party Pokémon) or `0x02024744` (enemy/wild Pokémon)
 - Species ID: `0x020244F4` (party, PV + 0x08) or `0x0202474C` (enemy, PV + 0x08)
 - RNG Seed: `0x03005D80` (used for RNG manipulation)
+
+### Wild Pokémon species identification (Route 101)
+
+Reading wild Pokémon species from memory is trickier than party Pokémon. The battle structure stores things differently, so the normal decryption doesn't work.
+
+#### What went wrong
+
+When I tried to decrypt wild Pokémon data using the same method as party Pokémon, I kept getting values that were close but wrong:
+
+- Expected Wurmple (265), got 290 (off by 25)
+- Expected Poochyena (261), got 286 (off by 25)
+- Expected Zigzagoon (263), got 288 (off by 25)
+
+Always off by 25. That's not a coincidence.
+
+#### Why it happens
+
+The battle structure for wild encounters is different from party Pokémon:
+
+1. OT TID handling - Wild Pokémon usually have OT TID = 0, but the battle structure might store it differently
+2. Memory layout - The encrypted data might be at a different offset
+3. Decryption key - The XOR formula might need tweaking
+
+The normal party decryption looks like this:
+```python
+xor_key = (tid ^ pv)
+decrypted = encrypted_val ^ xor_key
+species_id = decrypted & 0xFFFF
+```
+
+For wild Pokémon, this gives you values that are consistently off by about 25.
+
+#### How it's fixed
+
+The script tries a bunch of things until something works:
+
+1. Tries different OT TID values - Tests 0, the TID from memory, and a few other combinations
+2. Tries different memory offsets - Checks offsets like 32, 0, 8, 16, 24, 40, 48 from the PV address
+3. Tries all substructure positions - Tests all 4 positions (G, A, E, M) to find where the species ID is
+4. Applies offset correction - If the decrypted value is in the valid range (1-386) but doesn't match, it tries adding or subtracting small amounts:
+   ```python
+   for offset_correction in [-30, -25, -20, -15, -10, -5, 5, 10, 15, 20, 25, 30]:
+       corrected_id = species_id + offset_correction
+       if corrected_id == target_species_id:
+           return corrected_id  # Found it!
+   ```
+
+5. Checks both halves - Also looks at the upper 16 bits in case of byte order issues
+
+#### Why this works
+
+The offset is always consistent. If you decrypt a Wurmple and get 290, you'll always get 290. So we can just subtract 25 and get the right answer.
+
+The correction range covers the offset we saw (25) plus some wiggle room in case it varies slightly.
+
+#### How it's implemented
+
+The script in `route101.py` tries the most likely combinations first (OT_TID from memory, offset +32, position 2). If that doesn't work, it tries everything else.
+
+It only applies the offset correction if the value is in the valid Pokémon ID range (1-386), so it won't give false positives.
+
+This works for any route - it just checks against the known species for that route.
 
 ### RNG bypass
 
@@ -261,7 +327,7 @@ emerald-shiny-hunter/
 │   ├── torchic.py              # Shiny hunt for Torchic
 │   ├── mudkip.py               # Shiny hunt for Mudkip
 │   ├── treecko.py              # Shiny hunt for Treecko
-│   ├── route101.py             # Route 101 wild encounters (with optional target filtering)
+│   ├── route101.py             # Route 101 wild encounters (with optional target filtering and live window)
 │   ├── combine_shinies.py      # Combine shinies from multiple saves
 │   └── debug/                  # Debug scripts that found memory addresses
 │       ├── find_species_address.py
