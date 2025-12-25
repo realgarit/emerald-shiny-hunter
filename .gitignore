@@ -4,6 +4,7 @@ logs/
 
 # ROMs and save files
 roms/
+save_states/
 *.gba
 *.sav
 *.ss0
