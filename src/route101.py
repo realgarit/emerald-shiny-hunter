@@ -75,13 +75,14 @@ A_PRESSES_LOADING = 15  # A presses to get through loading screens
 A_LOADING_DELAY_FRAMES = 20  # Wait ~0.33s between A presses during loading
 
 # Encounter method: Turn in place to trigger encounters
-# Press Left for 3 frames, then wait 5 frames
-# Press Right for 3 frames, then wait 5 frames
+# Press Left for 8 frames (turn in place without walking), then wait 8 frames
+# Press Right for 8 frames (turn in place without walking), then wait 8 frames
 # Repeat until Pokemon detected
-LEFT_HOLD_FRAMES = 3  # Hold Left for 3 frames
-LEFT_WAIT_FRAMES = 5  # Wait 5 frames after Left
-RIGHT_HOLD_FRAMES = 3  # Hold Right for 3 frames
-RIGHT_WAIT_FRAMES = 5  # Wait 5 frames after Right
+# Note: 1-2 frames = walk one tile, 5-10 frames = turn in place, 10+ = continuous walk
+LEFT_HOLD_FRAMES = 8  # Hold Left for 8 frames (turn in place)
+LEFT_WAIT_FRAMES = 8  # Wait 8 frames after Left
+RIGHT_HOLD_FRAMES = 8  # Hold Right for 8 frames (turn in place)
+RIGHT_WAIT_FRAMES = 8  # Wait 8 frames after Right
 
 # Button constants (GBA button bits)
 KEY_LEFT = 32   # bit 5
@@ -305,16 +306,18 @@ class ShinyHunter:
 
     def encounter_sequence(self, verbose=False, max_turns=1000):
         """Execute the encounter sequence: Turn in place to trigger wild encounters
-        
+
         Sequence:
-        - Press Left for 3 frames, then wait 5 frames
-        - Press Right for 3 frames, then wait 5 frames
+        - Press Left for 8 frames (turn in place), then wait 8 frames
+        - Press Right for 8 frames (turn in place), then wait 8 frames
         - Repeat until Pokemon detected in memory
-        
+
+        Timing: 1-2 frames = walk one tile, 5-10 frames = turn in place, 10+ = continuous walk
+
         Args:
             verbose: If True, print progress updates
             max_turns: Maximum number of turn cycles before giving up
-        
+
         Returns:
             True if Pokemon detected, False otherwise
         """
@@ -843,11 +846,15 @@ class ShinyHunter:
                 # Step 1: Execute loading sequence (15 A presses)
                 verbose = (self.attempts <= 3)  # Only verbose for first 3 attempts
                 self.loading_sequence(verbose=verbose)
-                
+
                 # Re-write RNG seed after loading sequence to ensure it's still set
                 self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
                 self.run_frames(5)  # Small delay to let it take effect
-                
+
+                # Wait for game to fully settle after loading (prevents walking on later resets)
+                # This gives the game time to fully initialize player state before turning
+                self.run_frames(15)  # Wait 0.25 seconds for game to settle
+
                 # Step 2: Execute encounter sequence (turn in place)
                 pokemon_found = self.encounter_sequence(verbose=verbose)
                 
