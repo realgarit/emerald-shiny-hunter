@@ -1,44 +1,46 @@
 # Pokémon Emerald Shiny Hunter
 
-Automated shiny hunting script for Pokémon Emerald starter Pokémon using mGBA Python bindings. This tool automates the process of resetting and checking for shiny starter Pokémon, saving you countless hours of manual resets.
+Automated shiny hunting for Pokémon Emerald using mGBA. Resets the game and checks for shinies automatically, so you don't have to sit there pressing buttons for hours.
 
-## Features
+Works with starter Pokémon and wild encounters on Route 101.
 
-- 🎯 **Automated Resets**: Automatically resets and checks for shiny starters
-- 🎲 **RNG Manipulation**: Bypasses Emerald's "seed 0" issue by writing random seeds to memory
-- 📊 **Progress Tracking**: Real-time progress updates with attempt counts and rates
-- 📸 **Screenshot Capture**: Automatically saves screenshots when a shiny is found
-- 🔊 **Notifications**: macOS system notifications and sound alerts
-- 💾 **Auto-Save**: Saves game state when shiny is found
-- 📝 **Logging**: Comprehensive logging to track your hunt
-- 🔄 **Error Recovery**: Automatic retry and recovery on errors
-- ⚡ **Optimized**: Fast execution with optimized button press timing
+## What it does
 
-## Requirements
+- Resets the game automatically and checks each attempt
+- Writes random RNG seeds to memory (Emerald starts with the same seed every reset)
+- Shows progress updates with attempt counts and rates
+- Saves screenshots when a shiny is found
+- Plays a sound and sends a macOS notification when it finds one
+- Saves the game state automatically so you can continue playing
+- Logs everything to a file
+- Retries automatically if something goes wrong
+- Runs fast with optimized button timing
 
-- **macOS** (for system notifications and alert sounds; can be modified for other OS)
-- **Python 3.7+**
-- **mGBA** installed via Homebrew with Python bindings
-- **Pokémon Emerald ROM** (legally obtained)
-- **Save file** (`.sav`) positioned before starter selection
+## What you need
+
+- macOS (for notifications and sounds - you can modify it for other OS)
+- Python 3.7 or newer
+- mGBA installed via Homebrew with Python bindings
+- A Pokémon Emerald ROM (you need to own the game legally)
+- A save file positioned right before you select your starter
 
 ## Installation
 
-### 1. Install mGBA with Python bindings
+### Install mGBA
 
 ```bash
 brew install mgba
 ```
 
-### 2. Verify Python bindings
-
-The mGBA Python bindings should be available after installing via Homebrew. Verify with:
+### Check if it works
 
 ```bash
 python3 -c "import mgba.core; print('mGBA bindings OK')"
 ```
 
-### 3. Clone this repository
+If that prints "mGBA bindings OK", you're good to go.
+
+### Get the code
 
 ```bash
 git clone <repository-url>
@@ -47,77 +49,71 @@ cd emerald-shiny-hunter
 
 ## Setup
 
-1. **Place your ROM**: Put your Pokémon Emerald ROM in the `roms/` directory as `Pokemon - Emerald Version (U).gba`
+### 1. Put your ROM in place
 
-2. **Prepare your save file**: 
-   - Create a save file (`.sav`) in the `roms/` directory
-   - Position yourself at the bag screen (after Birch asks you to help, when you can select Torchic)
-   - Save the game normally in mGBA (this creates/updates the `.sav` file)
+Put your Pokémon Emerald ROM in the `roms/` folder and name it `Pokemon - Emerald Version (U).gba`
 
-3. **Configure Trainer IDs**: Edit the starter script you want to use (`src/torchic.py` or `src/mudkip.py`) and set your Trainer ID (TID) and Secret ID (SID):
-   ```python
-   TID = 56078  # Your Trainer ID
-   SID = 24723  # Your Secret ID
-   ```
+### 2. Create a save file
 
-### Save File Positioning
+- Open the game in mGBA and get to the bag screen (right after Birch asks you to help, when you can select a starter)
+- Save the game normally in mGBA
+- This creates a `.sav` file in the `roms/` directory
 
-Your save file should be positioned at the moment when:
-- Birch has asked you to take a Pokémon from his bag
-- The cursor is on the bag (or you're about to open it)
-- You haven't selected Torchic yet
+### 3. Set your Trainer IDs
 
-**Note:** Your mGBA keyboard bindings don't affect the script. The Python API sends inputs directly to the Game Boy's virtual buttons.
+Open the script you want to use (like `src/torchic.py`) and change these values:
+
+```python
+TID = 56078  # Your Trainer ID
+SID = 24723  # Your Secret ID
+```
+
+You need both IDs for the shiny calculation to work correctly.
 
 ## Usage
 
-### Starter Scripts
+### Starter Pokémon
 
-This project includes separate scripts for each starter Pokémon:
+There are separate scripts for each starter:
 
-- **`torchic.py`**: Hunts for shiny Torchic (middle starter)
-- **`mudkip.py`**: Hunts for shiny Mudkip (right starter)
+- `torchic.py` - Hunts for shiny Torchic (middle starter)
+- `mudkip.py` - Hunts for shiny Mudkip (right starter)  
+- `treecko.py` - Hunts for shiny Treecko (left starter)
 
-### Running the Scripts
-
-Run the script for your desired starter:
+Run whichever one you want:
 
 ```bash
-# For Torchic
 python3 src/torchic.py
-
-# For Mudkip
 python3 src/mudkip.py
+python3 src/treecko.py
 ```
 
-### Suppressing GBA Debug Output
+### Route 101 Wild Encounters
 
-mGBA may output debug messages that clutter the console. To suppress them, pipe the output through `grep`:
+Hunt for shiny wild Pokémon on Route 101:
+
+- `route101.py` - Checks all Route 101 Pokémon (Poochyena, Zigzagoon, Wurmple)
+- `route101_filtered.py` - Only checks Poochyena and Zigzagoon, skips Wurmple
 
 ```bash
-# For Torchic
-python3 src/torchic.py 2>&1 | grep -v "^GBA"
-
-# For Mudkip
-python3 src/mudkip.py 2>&1 | grep -v "^GBA"
+python3 src/route101.py
+python3 src/route101_filtered.py
 ```
 
-This filters out lines starting with "GBA" while keeping all other output (including errors and progress updates).
+For Route 101, your save file should be positioned on Route 101, ready to walk around and trigger encounters.
 
-### What the Script Does
+### What happens when you run it
 
-The script will:
-1. Load the save file from `roms/Pokemon - Emerald Version (U).sav`
-2. Write a random RNG seed to memory (to bypass Emerald's seed 0 issue)
-3. Execute button presses to select the starter (sequence varies by starter)
-4. Decrypt and identify the Pokémon species from memory
-5. Check if the Pokémon is shiny using the Generation III formula
-6. If shiny: save screenshot, play alert sound, send notification, save game state, and stop
-7. If not shiny: reload save and repeat
+1. Loads your save file
+2. Writes a random RNG seed to memory (fixes Emerald's seed 0 bug)
+3. Presses buttons to select the starter or trigger an encounter
+4. Reads the Pokémon data from memory and checks if it's shiny
+5. If shiny: saves screenshot, plays sound, sends notification, saves game state, stops
+6. If not shiny: reloads and tries again
 
-### Progress Output
+### Progress output
 
-The script provides detailed progress information:
+You'll see something like this:
 
 ```
 [Attempt 1] Starting new reset...
@@ -135,19 +131,17 @@ The script provides detailed progress information:
   Estimated time to shiny: ~54.6 minutes (1/8192 odds)
 ```
 
-### Status Updates
-
-Every 10 attempts or 5 minutes, you'll see a status update:
+Every 10 attempts or 5 minutes, you'll get a status update:
 
 ```
 [Status] Attempt 100 | Rate: 2.45/s | Elapsed: 40.8 min | Running smoothly...
 ```
 
-## How It Works
+## How it works
 
-### Shiny Calculation
+### Shiny calculation
 
-The script uses the Generation III shiny formula:
+Uses the Generation III shiny formula:
 
 ```python
 PV_Low = PV & 0xFFFF          # Lower 16 bits of Personality Value
@@ -157,117 +151,142 @@ PV_XOR = PV_Low ^ PV_High     # PV lower XOR PV upper
 Shiny_Value = TID_XOR_SID ^ PV_XOR  # Final shiny calculation
 ```
 
-If `Shiny_Value < 8`, the Pokémon is shiny.
+If `Shiny_Value < 8`, it's shiny.
 
-### Memory Addresses
+### Memory addresses
 
-- **Personality Value**: `0x020244EC` (first 4 bytes of party data)
-- **RNG Seed**: `0x03005D80` (used for RNG manipulation)
+- Personality Value: `0x020244EC` (party Pokémon) or `0x02024744` (enemy/wild Pokémon)
+- Species ID: `0x020244F4` (party, PV + 0x08) or `0x0202474C` (enemy, PV + 0x08)
+- RNG Seed: `0x03005D80` (used for RNG manipulation)
 
-### RNG Bypass
+### RNG bypass
 
-Pokémon Emerald has a "seed 0" issue where the RNG starts at the same value each reset. The script:
-1. Waits a random number of frames (10-100) after loading
-2. Writes a random 32-bit seed to the RNG memory address
-3. Re-writes the seed after button presses to prevent overwrite
+Emerald has a bug where the RNG starts at the same value every reset. The script fixes this by:
 
-### Stability Features
+1. Waiting a random number of frames (10-100) after loading
+2. Writing a random 32-bit seed to the RNG memory address
+3. Re-writing the seed after button presses so the game doesn't overwrite it
 
-- **Error Handling**: Automatic retry (up to 3 consecutive errors)
-- **Periodic Status Updates**: Every 10 attempts or 5 minutes
-- **Automatic Recovery**: Resets core and reloads save on errors
-- **Memory Management**: Core is reset each iteration, file handles properly closed
-- **Logging**: All output is logged to `logs/shiny_hunt_YYYYMMDD_HHMMSS.log`
-- **Long-Running**: Can run indefinitely without memory leaks
+### Stability
+
+- Automatic retry (up to 3 consecutive errors)
+- Status updates every 10 attempts or 5 minutes
+- Resets and reloads save on errors
+- Core is reset each iteration, file handles closed properly
+- Everything is logged to `logs/shiny_hunt_YYYYMMDD_HHMMSS.log`
+- Can run indefinitely without memory leaks
 
 ## Configuration
 
-Edit these constants in the starter script you're using (`src/torchic.py` or `src/mudkip.py`):
+Edit these in the script you're using:
 
 - `ROM_PATH`: Path to your ROM file (default: `roms/Pokemon - Emerald Version (U).gba`)
-- `TID`: Your Trainer ID (required for accurate shiny detection)
-- `SID`: Your Secret ID (required for accurate shiny detection)
+- `TID`: Your Trainer ID
+- `SID`: Your Secret ID
 
-### Torchic-specific (`src/torchic.py`):
+### Starter-specific settings
+
+**Torchic** (`src/torchic.py`):
 - `A_PRESSES_NEEDED`: Number of A button presses (default: 26)
 - `A_PRESS_DELAY_FRAMES`: Frames to wait between presses (default: 15)
 
-### Mudkip-specific (`src/mudkip.py`):
+**Mudkip** (`src/mudkip.py`):
 - `A_PRESSES_BEFORE_RIGHT`: A presses before Right button (default: 20)
 - `WAIT_AFTER_A_FRAMES`: Frames to wait after A presses (default: 30)
 - `A_PRESSES_AFTER_RIGHT`: A presses after Right button (default: 2)
 - `A_PRESS_DELAY_FRAMES`: Frames to wait between presses (default: 15)
 
-## Output Files
+**Treecko** (`src/treecko.py`):
+- Similar settings to Mudkip but for selecting the left starter
 
-When a shiny is found, the script creates:
+## Output files
 
-- **Screenshot**: `screenshots/shiny_found_YYYYMMDD_HHMMSS.png`
-- **Save State**: `save_states/shiny_save_state_YYYYMMDD_HHMMSS.ss0`
-- **Log File**: `logs/shiny_hunt_YYYYMMDD_HHMMSS.log`
+When a shiny is found:
+
+- Screenshot: `screenshots/shiny_found_YYYYMMDD_HHMMSS.png`
+- Save State: `save_states/shiny_save_state_YYYYMMDD_HHMMSS.ss0`
+- Log File: `logs/shiny_hunt_YYYYMMDD_HHMMSS.log` (or `route101_hunt_...` for Route 101)
 
 ## Troubleshooting
 
 ### mGBA bindings not found
 
 If you get `ImportError: No module named 'mgba'`:
-- Ensure mGBA was installed via Homebrew: `brew install mgba`
-- Verify Python can import it: `python3 -c "import mgba.core"`
 
-### Save file fails to load
+- Make sure mGBA was installed via Homebrew: `brew install mgba`
+- Check if Python can import it: `python3 -c "import mgba.core"`
 
-- Ensure the `.sav` file exists in the `roms/` directory
-- Verify the save file is from Pokémon Emerald
-- Make sure the save is positioned correctly (at bag screen)
+### Save file won't load
 
-### Screenshot appears black
+- Make sure the `.sav` file exists in the `roms/` directory
+- Check that it's actually a Pokémon Emerald save file
+- Verify the save is positioned correctly (at bag screen for starters, on Route 101 for wild encounters)
 
-Screenshots may not work in headless mode (when mGBA has no visible window). The save state contains the exact game state - load it in mGBA GUI to see your shiny!
+### Screenshot is black
 
-### No shiny found after many attempts
+Screenshots might not work if mGBA is running headless (no visible window). The save state has the exact game state - just load it in mGBA GUI to see your shiny.
 
-The odds of finding a shiny are **1/8192** in Generation III. This could take thousands of resets! The script will show estimated time based on your current rate.
+### No shiny after many attempts
+
+Shiny odds are 1/8192 in Generation III. It can take thousands of resets. The script shows an estimated time based on your current rate.
 
 ### Script stops with errors
 
-- Check the log file in `logs/` for detailed error messages
-- Ensure your ROM and save files are valid
-- Verify your TID and SID are correct
+- Check the log file in `logs/` for details
+- Make sure your ROM and save files are valid
+- Double-check your TID and SID are correct
 
-## Project Structure
+## Other tools
+
+### Combine shinies
+
+`combine_shinies.py` - Takes shiny Pokémon from different save states and puts them all in one save file. Useful if you want all three starters shiny in one game.
+
+```bash
+python3 src/combine_shinies.py
+```
+
+## Project structure
 
 ```
 emerald-shiny-hunter/
 ├── src/
-│   ├── torchic.py           # Shiny hunting script for Torchic
-│   ├── mudkip.py            # Shiny hunting script for Mudkip
-│   ├── debug/               # Debug and test scripts
-│   │   ├── test_mudkip_sequence.py
-│   │   └── ...
-│   └── ...                  # Other test scripts
-├── roms/                     # ROM and save files (gitignored)
-├── screenshots/              # Screenshots when shiny found (gitignored)
-├── save_states/             # Save states (gitignored)
-├── logs/                    # Log files (gitignored)
-├── README.md                # This file
-└── LICENSE                  # MIT License
+│   ├── torchic.py              # Shiny hunt for Torchic
+│   ├── mudkip.py               # Shiny hunt for Mudkip
+│   ├── treecko.py              # Shiny hunt for Treecko
+│   ├── route101.py             # Route 101 wild encounters (all species)
+│   ├── route101_filtered.py    # Route 101 (Poochyena/Zigzagoon only)
+│   ├── combine_shinies.py      # Combine shinies from multiple saves
+│   └── debug/                  # Debug scripts that found memory addresses
+│       ├── find_species_address.py
+│       ├── find_enemy_species_address.py
+│       ├── scan_enemy_structure.py
+│       ├── test_fast_presses.py
+│       ├── test_decryption.py
+│       └── test_mudkip_sequences_comprehensive.py
+├── roms/                       # ROM and save files (gitignored)
+├── screenshots/                # Screenshots when shiny found (gitignored)
+├── save_states/                # Save states (gitignored)
+├── logs/                       # Log files (gitignored)
+├── README.md
+└── LICENSE
 ```
 
-## Legal Disclaimer
+## Legal stuff
 
-This software is for **educational and personal use only**. Users are responsible for ensuring they have legal rights to use any ROM files with this software. The authors and contributors are not responsible for any misuse of this software or any legal issues arising from its use.
+This is for educational and personal use only. You need to own a legal copy of Pokémon Emerald. ROM files should be created from your own game cartridge.
 
-**You must own a legal copy of Pokémon Emerald** to use this software ethically. ROM files should be created from your own legally purchased game cartridge.
+The authors aren't responsible for any misuse or legal issues.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions welcome. Feel free to submit a pull request.
 
-## Acknowledgments
+## Credits
 
 - Built with [mGBA](https://mgba.io/) emulator
-- Uses the Generation III shiny formula documented by the Pokémon community
+- Uses the Generation III shiny formula from the Pokémon community
