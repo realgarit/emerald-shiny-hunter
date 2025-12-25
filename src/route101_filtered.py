@@ -28,6 +28,10 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+import cv2
+import numpy as np
+from cffi import FFI
+import argparse
 
 # Get project root directory (parent of src/)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -91,7 +95,7 @@ KEY_RIGHT = 16  # bit 4
 
 
 class ShinyHunter:
-    def __init__(self, suppress_debug=True):
+    def __init__(self, suppress_debug=True, show_window=False):
         # Set up logging
         self.log_dir = PROJECT_ROOT / "logs"
         self.log_dir.mkdir(exist_ok=True)
@@ -136,6 +140,20 @@ class ShinyHunter:
         self.screenshot_image = mgba.image.Image(240, 160)
         self.core.set_video_buffer(self.screenshot_image)
         
+        # Run a few frames to populate the buffer
+        for _ in range(10):
+            self.core.run_frame()
+        
+        # Set up OpenCV visualization window (optional)
+        self.show_window = show_window
+        if self.show_window:
+            self.window_name = "Shiny Hunter"
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(self.window_name, 480, 320)
+        self.frame_counter = 0  # For frame skip logic
+        self.frame_skip = 5  # Update window every 5th frame
+        self.debug_display = True  # Enable debug output for first few frames
+        
         self.attempts = 0
         self.start_time = time.time()
 
@@ -148,8 +166,54 @@ class ShinyHunter:
         print(f"[*] Target species: Poochyena, Zigzagoon (Wurmple will be skipped)")
         print(f"[*] Starting shiny hunt on Route 101...\n")
     
+    def _update_display_window(self):
+        """Update the OpenCV display window with current frame buffer"""
+        try:
+            if not hasattr(self, 'screenshot_image') or not hasattr(self.screenshot_image, 'buffer'):
+                return
+            
+            # The 'buffer' here is a CFFI CData pointer
+            raw_buffer = self.screenshot_image.buffer
+            expected_size = 240 * 160 * 4
+            
+            # --- CRITICAL FIX FOR MAC CFFI ERROR ---
+            try:
+                ffi = FFI()
+                # Wrap the raw C pointer into a Python-accessible buffer
+                buffer_bytes = bytes(ffi.buffer(raw_buffer, expected_size))
+            except Exception:
+                # Fallback for different mGBA versions
+                try:
+                    buffer_bytes = bytes(raw_buffer)
+                except:
+                    return  # Can't convert buffer, skip this frame
+            # ----------------------------------------
+
+            # Convert to numpy array
+            np_buffer = np.frombuffer(buffer_bytes, dtype=np.uint8, count=expected_size)
+            rgba_frame = np_buffer.reshape(160, 240, 4)
+            
+            # Convert RGBA to BGR for OpenCV
+            bgr_frame = cv2.cvtColor(rgba_frame, cv2.COLOR_RGBA2BGR)
+            
+            # Scale and Display
+            scaled_frame = cv2.resize(bgr_frame, (480, 320), interpolation=cv2.INTER_NEAREST)
+            cv2.imshow(self.window_name, scaled_frame)
+            
+        except Exception as e:
+            # Prevent console spam, but keep for debugging if needed
+            # print(f"Display error: {e}")
+            pass
+    
     def cleanup(self):
-        """Restore stdout/stderr and close log file"""
+        """Restore stdout/stderr, close log file, and close OpenCV windows"""
+        # Close OpenCV windows if they were created
+        if self.show_window:
+            try:
+                cv2.destroyAllWindows()
+            except:
+                pass
+        
         if hasattr(self, 'log_file_handle') and self.log_file_handle:
             sys.stdout = self.original_stdout
             self.log_file_handle.close()
@@ -179,6 +243,13 @@ class ShinyHunter:
         """Advance emulation by specified number of frames"""
         for _ in range(count):
             self.core.run_frame()
+            # Update visualization window (with frame skip for performance) if enabled
+            if self.show_window:
+                self.frame_counter += 1
+                if self.frame_counter % self.frame_skip == 0:
+                    self._update_display_window()
+                # Critical for macOS: call waitKey to prevent window freezing
+                cv2.waitKey(1)
 
     def press_a(self, hold_frames=5, release_frames=5):
         """Press and release A button"""
@@ -904,10 +975,22 @@ class ShinyHunter:
 
 
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Pokémon Emerald Shiny Hunter - Route 101 (Filtered - No Wurmple)",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        '--show-window',
+        action='store_true',
+        help='Display a live visualization window showing the game while hunting'
+    )
+    args = parser.parse_args()
+    
     hunter = None
     try:
         # Suppress GBA debug output by default
-        hunter = ShinyHunter(suppress_debug=True)
+        hunter = ShinyHunter(suppress_debug=True, show_window=args.show_window)
         hunter.hunt()
     except KeyboardInterrupt:
         print("\n[!] Hunt interrupted by user.")
