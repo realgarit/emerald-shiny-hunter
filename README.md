@@ -12,6 +12,7 @@ Works with starter Pokémon and wild encounters on Route 101 and Route 102.
 - Watch the game live (Route 101 & 102) - add `--show-window` to see what's happening
 - Saves screenshots when a shiny is found
 - Plays a sound and sends a macOS notification when it finds one
+- Sends Discord webhook notifications (optional, via environment variable)
 - Saves the game state automatically so you can continue playing
 - Logs everything to a file
 - Retries automatically if something goes wrong
@@ -310,6 +311,41 @@ Edit these in the script you're using:
 - `ROM_PATH`: Path to your ROM file (default: `roms/Pokemon - Emerald Version (U).gba`)
 - `TID`: Your Trainer ID
 - `SID`: Your Secret ID
+
+### Discord Webhook Notifications (Optional)
+
+Route 102 script supports Discord webhook notifications in addition to macOS notifications. To enable:
+
+**Option 1: Using .env file (Recommended)**
+
+1. Copy the example file and add your webhook URL:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your Discord webhook URL
+   ```
+
+2. Install python-dotenv (optional, but recommended):
+   ```bash
+   pip3 install python-dotenv
+   ```
+   If `python-dotenv` is not installed, the script will still work but won't load the `.env` file automatically.
+
+3. Run the script as usual:
+   ```bash
+   python3 src/route102.py
+   ```
+
+**Option 2: Using environment variable**
+
+Alternatively, you can set the environment variable directly:
+```bash
+export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/YOUR_WEBHOOK_URL"
+python3 src/route102.py
+```
+
+The script will send a Discord notification when a shiny is found. If the webhook URL is not set, the script will skip Discord notifications silently (no errors).
+
+**Note:** The `.env` file is already in `.gitignore`, so your webhook URL won't be committed to the repository.
 
 ### Starter-specific settings
 

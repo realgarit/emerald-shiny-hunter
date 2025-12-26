@@ -30,9 +30,23 @@ import cv2
 import numpy as np
 from cffi import FFI
 import argparse
+import urllib.request
+import urllib.parse
+import json
 
 # Get project root directory (parent of src/)
 PROJECT_ROOT = Path(__file__).parent.parent
+
+# Try to load .env file if python-dotenv is available
+try:
+    from dotenv import load_dotenv
+    # Load .env file from project root
+    env_path = PROJECT_ROOT / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    # python-dotenv not installed, will use environment variables only
+    pass
 
 # Configuration
 ROM_PATH = str(PROJECT_ROOT / "roms" / "Pokemon - Emerald Version (U).gba")
@@ -732,6 +746,53 @@ class ShinyHunter:
         except Exception as e:
             print(f"[!] Failed to send notification: {e}")
 
+    def send_discord_notification(self, message, title="Shiny Hunter", color=0x00ff00):
+        """Send Discord webhook notification
+        
+        Args:
+            message: The message content to send
+            title: The title of the embed (default: "Shiny Hunter")
+            color: The color of the embed in hex (default: green)
+        """
+        webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+        if not webhook_url:
+            # Silently skip if webhook URL is not set (don't spam console)
+            return
+        
+        try:
+            # Create embed payload
+            embed = {
+                "title": title,
+                "description": message,
+                "color": color,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            payload = {
+                "embeds": [embed]
+            }
+            
+            # Convert to JSON
+            data = json.dumps(payload).encode('utf-8')
+            
+            # Create request with User-Agent header
+            req = urllib.request.Request(
+                webhook_url,
+                data=data,
+                headers={
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'ShinyHunter/1.0'
+                }
+            )
+            
+            # Send request
+            with urllib.request.urlopen(req, timeout=10) as response:
+                response.read()  # Read response to ensure request completes
+        except urllib.error.URLError as e:
+            print(f"[!] Failed to send Discord notification: {e}")
+        except Exception as e:
+            print(f"[!] Failed to send Discord notification: {e}")
+
     def open_screenshot(self, filepath):
         """Open screenshot in default viewer"""
         if filepath and os.path.exists(filepath):
@@ -954,6 +1015,16 @@ class ShinyHunter:
                         f"Shiny {species_name} found after {self.attempts} attempts!",
                         f"PV: 0x{pv:08X} | Time: {elapsed/60:.1f} min"
                     )
+                    
+                    # Send Discord webhook notification
+                    discord_message = (
+                        f"🎉 **Shiny {species_name} found!** 🎉\n\n"
+                        f"**Attempts:** {self.attempts}\n"
+                        f"**Personality Value:** `0x{pv:08X}`\n"
+                        f"**Shiny Value:** {shiny_value}\n"
+                        f"**Time Elapsed:** {elapsed/60:.1f} minutes"
+                    )
+                    self.send_discord_notification(discord_message, title="🎉 Shiny Found! 🎉")
                     
                     # Save game state so user can continue playing
                     print(f"\n[+] Saving game state...")

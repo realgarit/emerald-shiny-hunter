@@ -39,3 +39,6 @@ ENV/
 # Temporary files
 *.tmp
 *.bak
+
+# Environment variables
+.env
