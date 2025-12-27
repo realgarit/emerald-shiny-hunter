@@ -1,0 +1,11 @@
+# Python dependencies for emerald-shiny-hunter
+# Note: mgba must be installed separately (see README.md)
+# mgba package is only available for Python 3.10+ on PyPI
+
+# Required for route101.py and route102.py (image processing)
+opencv-python>=4.0.0
+numpy>=1.20.0
+
+# Optional: for Discord webhook support in route102.py
+python-dotenv>=0.19.0
+

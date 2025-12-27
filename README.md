@@ -21,8 +21,9 @@ Works with starter Pokémon and wild encounters on Route 101 and Route 102.
 ## What you need
 
 - macOS (for notifications and sounds - you can modify it for other OS)
-- Python 3.7 or newer
-- mGBA installed via Homebrew with Python bindings
+- Python 3.10 or 3.11 (required - the mgba package on PyPI only has pre-built wheels for these versions)
+- mGBA installed via Homebrew (`brew install mgba`)
+- mGBA Python bindings installed via pip (`pip3 install mgba` with Python 3.10+)
 - A Pokémon Emerald ROM (you need to own the game legally)
 - A save file positioned right before you select your starter
 
@@ -30,17 +31,63 @@ Works with starter Pokémon and wild encounters on Route 101 and Route 102.
 
 ### Install mGBA
 
+First, install the mGBA emulator via Homebrew:
+
 ```bash
 brew install mgba
 ```
 
+### Install mGBA Python bindings
+
+The Python bindings are required for the scripts to work. **Important:** The `mgba` package on PyPI only provides pre-built wheels for Python 3.10 and 3.11.
+
+**Install Python 3.10 or 3.11 (recommended):**
+
+On macOS, install a newer Python version via Homebrew:
+
+```bash
+brew install python@3.11
+python3.11 -m pip install mgba
+```
+
+Then use `python3.11` to run the scripts instead of `python3`:
+
+```bash
+python3.11 src/torchic.py
+python3.11 src/route102.py
+```
+
+**Note:** If you have Python 3.9 or older, building from source is possible but can be problematic. We strongly recommend upgrading to Python 3.10 or 3.11 for the easiest installation experience.
+
+### Install Python dependencies
+
+The scripts require additional Python packages. Install the required packages:
+
+```bash
+python3.11 -m pip install opencv-python numpy
+```
+
+Or install from requirements.txt (includes optional packages):
+
+```bash
+python3.11 -m pip install -r requirements.txt
+```
+
+**Required packages:**
+- `opencv-python` and `numpy` - Required for `route101.py` and `route102.py` (for image processing)
+- Starter scripts (`torchic.py`, `mudkip.py`, `treecko.py`) don't need these packages
+
+**Optional packages:**
+- `python-dotenv` - Only needed if you want to use a `.env` file for Discord webhook configuration. Without it, the script will use environment variables directly.
+
 ### Check if it works
 
 ```bash
-python3 -c "import mgba.core; print('mGBA bindings OK')"
+python3.11 -c "import mgba.core; print('mGBA bindings OK')"
+python3.11 -c "import cv2, numpy; print('Dependencies OK')"
 ```
 
-If that prints "mGBA bindings OK", you're good to go.
+If both commands print "OK", you're good to go.
 
 ### Get the code
 
@@ -374,10 +421,18 @@ When a shiny is found:
 
 ### mGBA bindings not found
 
-If you get `ImportError: No module named 'mgba'`:
+If you get `ModuleNotFoundError: No module named 'mgba'` or `ImportError: No module named 'mgba'`:
 
+- **Check your Python version**: `python3 --version`
+- The `mgba` package on PyPI only has pre-built wheels for Python 3.10 and 3.11
+- **Solution**: Install Python 3.11 and use it:
+  ```bash
+  brew install python@3.11
+  python3.11 -m pip install mgba
+  python3.11 -c "import mgba.core; print('mGBA bindings OK')"
+  ```
 - Make sure mGBA was installed via Homebrew: `brew install mgba`
-- Check if Python can import it: `python3 -c "import mgba.core"`
+- Remember to use `python3.11` to run the scripts instead of `python3`
 
 ### Save file won't load
 
