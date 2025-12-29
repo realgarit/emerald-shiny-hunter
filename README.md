@@ -486,10 +486,6 @@ If you get `ModuleNotFoundError: No module named 'mgba'` or `ImportError: No mod
 - Check that it's actually a Pokémon Emerald save file
 - Verify the save is positioned correctly (at bag screen for starters, on Route 101/102 for wild encounters)
 
-### Screenshot is black
-
-Screenshots might not work if mGBA is running headless (no visible window). The save state has the exact game state - just load it in mGBA GUI to see your shiny.
-
 ### No shiny after many attempts
 
 Shiny odds are 1/8192 in Generation III. It can take thousands of attempts. The script shows an estimated time based on your current rate.
@@ -499,13 +495,6 @@ Shiny odds are 1/8192 in Generation III. It can take thousands of attempts. The 
 - Check the log file in `logs/` for details
 - Make sure your ROM and save files are valid
 - Double-check your TID and SID are correct
-
-### Character walks instead of turning (Route 102)
-
-If the character occasionally walks a tile instead of turning in place:
-- This is handled automatically by the direction tracking system
-- The script starts turning in the opposite direction after fleeing to prevent this
-- If it happens frequently, the timing values in the script may need adjustment
 
 ## Other tools
 
@@ -560,4 +549,5 @@ Contributions welcome. Feel free to submit a pull request.
 ## Credits
 
 - Built with [mGBA](https://mgba.io/) emulator
+- Go visit the guys at [pokeemerald] (https://github.com/pret/pokeemerald)
 - Uses the Generation III shiny formula from the Pokémon community
