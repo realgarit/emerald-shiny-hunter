@@ -549,5 +549,5 @@ Contributions welcome. Feel free to submit a pull request.
 ## Credits
 
 - Built with [mGBA](https://mgba.io/) emulator
-- Go visit the guys at [pokeemerald] (https://github.com/pret/pokeemerald)
+- Go visit the guys at [pokeemerald](https://github.com/pret/pokeemerald)
 - Uses the Generation III shiny formula from the Pokémon community
