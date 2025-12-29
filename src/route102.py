@@ -19,6 +19,7 @@ Features:
 
 import mgba.core
 import mgba.image
+import mgba.log
 import random
 import subprocess
 import time
@@ -96,18 +97,19 @@ A_PRESSES_LOADING = 15  # A presses to get through loading screens
 A_LOADING_DELAY_FRAMES = 20  # Wait ~0.33s between A presses during loading
 
 # Encounter method: Turn in place to trigger encounters
-# Press Left for 8 frames (turn in place without walking), then wait 8 frames
-# Press Right for 8 frames (turn in place without walking), then wait 8 frames
+# Press Left for 1 frame (turn in place without walking), then wait 20 frames
+# Press Right for 1 frame (turn in place without walking), then wait 20 frames
 # Repeat until Pokemon detected
-# Note: 1-2 frames = walk one tile, 5-10 frames = turn in place, 10+ = continuous walk
-LEFT_HOLD_FRAMES = 8  # Hold Left for 8 frames (turn in place)
-LEFT_WAIT_FRAMES = 8  # Wait 8 frames after Left
-RIGHT_HOLD_FRAMES = 8  # Hold Right for 8 frames (turn in place)
-RIGHT_WAIT_FRAMES = 8  # Wait 8 frames after Right
+# Note: 3 frames is maximum to register turn, longer wait ensures no walk
+LEFT_HOLD_FRAMES = 1  # Hold Left for 1 frame (quick turn)
+LEFT_WAIT_FRAMES = 20  # Wait 20 frames after Left
+RIGHT_HOLD_FRAMES = 1  # Hold Right for 1 frame (quick turn)
+RIGHT_WAIT_FRAMES = 20  # Wait 20 frames after Right
 
 # Button constants (GBA button bits)
 KEY_LEFT = 32   # bit 5
 KEY_RIGHT = 16  # bit 4
+KEY_DOWN = 128  # bit 7
 
 
 class ShinyHunter:
@@ -151,17 +153,16 @@ class ShinyHunter:
                 # Return True so print() doesn't add extra newlines
                 return True
         
-        # Open log file and set up tee
+        # Open log file and set up tee to write to both console and file
         self.log_file_handle = open(self.log_file, 'w', encoding='utf-8')
         self.original_stdout = sys.stdout
         sys.stdout = Tee(sys.stdout, self.log_file_handle)
         
-        # Suppress GBA debug output by redirecting stderr
+        # Suppress GBA debug output using mGBA's logging system
+        # This is more effective than stderr redirection as it stops logging at the source
         if suppress_debug:
-            self.original_stderr = sys.stderr
-            self.null_file = open(os.devnull, 'w')
-            sys.stderr = self.null_file
-        
+            mgba.log.silence()
+
         self.core = mgba.core.load_path(ROM_PATH)
         if not self.core:
             raise RuntimeError(f"Failed to load ROM: {ROM_PATH}")
@@ -184,6 +185,8 @@ class ShinyHunter:
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
             cv2.resizeWindow(self.window_name, 480, 320)
         self.frame_counter = 0  # For frame skip logic
+        self.last_battle_pv = None  # Track last battle's PV to detect new encounters
+        self.last_direction = None  # Track last direction to avoid walking after flee
         self.frame_skip = 5  # Update window every 5th frame
         self.debug_display = True  # Enable debug output for first few frames
         
@@ -197,9 +200,10 @@ class ShinyHunter:
         print(f"[*] TID ^ SID = {TID} ^ {SID} = {TID ^ SID}")
         print(f"[*] Monitoring Enemy Party at 0x{ENEMY_PV_ADDR:08X}")
         if self.target_species_name:
-            print(f"[*] Target species: {self.target_species_name} only (others will be skipped)")
+            print(f"[*] Target species: {self.target_species_name} (non-targets will be logged/notified but hunt continues)")
         else:
             print(f"[*] Target species: {', '.join(POKEMON_SPECIES.values())} (all species)")
+        print(f"[*] Using FLEE method (flee from battle instead of resetting)")
         print(f"[*] Starting shiny hunt on Route 102...\n")
     
     def _update_display_window(self):
@@ -253,10 +257,6 @@ class ShinyHunter:
         if hasattr(self, 'log_file_handle') and self.log_file_handle:
             sys.stdout = self.original_stdout
             self.log_file_handle.close()
-        if hasattr(self, 'null_file') and self.null_file:
-            sys.stderr = self.original_stderr
-            self.null_file.close()
-            self.null_file = None
     
     def __del__(self):
         """Restore stdout/stderr when object is destroyed"""
@@ -277,15 +277,14 @@ class ShinyHunter:
 
     def run_frames(self, count):
         """Advance emulation by specified number of frames"""
-        for _ in range(count):
+        for i in range(count):
             self.core.run_frame()
+            self.frame_counter += 1
             # Update visualization window (with frame skip for performance) if enabled
             if self.show_window:
-                self.frame_counter += 1
                 if self.frame_counter % self.frame_skip == 0:
                     self._update_display_window()
-                # Critical for macOS: call waitKey to prevent window freezing
-                cv2.waitKey(1)
+                    cv2.waitKey(1)  # Only call when updating display
 
     def press_a(self, hold_frames=5, release_frames=5):
         """Press and release A button"""
@@ -304,6 +303,13 @@ class ShinyHunter:
     def press_right(self, hold_frames=5, release_frames=5):
         """Press and release Right button"""
         self.core._core.setKeys(self.core._core, KEY_RIGHT)
+        self.run_frames(hold_frames)
+        self.core._core.setKeys(self.core._core, 0)
+        self.run_frames(release_frames)
+    
+    def press_down(self, hold_frames=5, release_frames=5):
+        """Press and release Down button"""
+        self.core._core.setKeys(self.core._core, KEY_DOWN)
         self.run_frames(hold_frames)
         self.core._core.setKeys(self.core._core, 0)
         self.run_frames(release_frames)
@@ -331,9 +337,7 @@ class ShinyHunter:
         Sequence:
         - Press Left for 8 frames (turn in place), then wait 8 frames
         - Press Right for 8 frames (turn in place), then wait 8 frames
-        - Repeat until Pokemon detected in memory
-
-        Timing: 1-2 frames = walk one tile, 5-10 frames = turn in place, 10+ = continuous walk
+        - Repeat until NEW Pokemon detected (PV is non-zero AND different from last battle)
 
         Args:
             verbose: If True, print progress updates
@@ -344,41 +348,102 @@ class ShinyHunter:
         """
         if verbose:
             print(f"    Turning in place to trigger encounters...", end='', flush=True)
-        
+
+        # Clear all keys before starting to ensure no stuck inputs
+        self.core._core.setKeys(self.core._core, 0)
+        self.run_frames(10)
+
+        # Turn in place to trigger encounters
+        # Start with OPPOSITE of last direction to avoid walking after flee
         turn_count = 0
+        start_with_right = (self.last_direction == 'left')
+
         while turn_count < max_turns:
-            # Press Left for 3 frames, then wait 5 frames
-            self.press_left(hold_frames=LEFT_HOLD_FRAMES, release_frames=0)
-            self.run_frames(LEFT_WAIT_FRAMES)
-            
-            # Check for Pokemon after Left turn
-            pv = self.read_u32(ENEMY_PV_ADDR)
-            if pv != 0:
-                if verbose:
-                    print(f" Pokemon detected after {turn_count * 2 + 1} turns!")
-                return True
-            
-            # Press Right for 3 frames, then wait 5 frames
-            self.press_right(hold_frames=RIGHT_HOLD_FRAMES, release_frames=0)
-            self.run_frames(RIGHT_WAIT_FRAMES)
-            
-            # Check for Pokemon after Right turn
-            pv = self.read_u32(ENEMY_PV_ADDR)
-            if pv != 0:
-                if verbose:
-                    print(f" Pokemon detected after {turn_count * 2 + 2} turns!")
-                return True
-            
+            if start_with_right:
+                # Press Right first, then Left
+                self.press_right(hold_frames=RIGHT_HOLD_FRAMES, release_frames=0)
+                self.run_frames(RIGHT_WAIT_FRAMES)
+                self.last_direction = 'right'
+
+                pv = self.read_u32(ENEMY_PV_ADDR)
+                if pv != 0 and pv != self.last_battle_pv:
+                    if verbose:
+                        print(" Found!")
+                    return True
+
+                self.press_left(hold_frames=LEFT_HOLD_FRAMES, release_frames=0)
+                self.run_frames(LEFT_WAIT_FRAMES)
+                self.last_direction = 'left'
+
+                pv = self.read_u32(ENEMY_PV_ADDR)
+                if pv != 0 and pv != self.last_battle_pv:
+                    if verbose:
+                        print(" Found!")
+                    return True
+            else:
+                # Press Left first, then Right
+                self.press_left(hold_frames=LEFT_HOLD_FRAMES, release_frames=0)
+                self.run_frames(LEFT_WAIT_FRAMES)
+                self.last_direction = 'left'
+
+                pv = self.read_u32(ENEMY_PV_ADDR)
+                if pv != 0 and pv != self.last_battle_pv:
+                    if verbose:
+                        print(" Found!")
+                    return True
+
+                self.press_right(hold_frames=RIGHT_HOLD_FRAMES, release_frames=0)
+                self.run_frames(RIGHT_WAIT_FRAMES)
+                self.last_direction = 'right'
+
+                pv = self.read_u32(ENEMY_PV_ADDR)
+                if pv != 0 and pv != self.last_battle_pv:
+                    if verbose:
+                        print(" Found!")
+                    return True
+
             turn_count += 1
-            
-            # Periodic status update every 100 turns
-            if verbose and turn_count % 100 == 0:
-                print(f" {turn_count * 2} turns...", end='', flush=True)
-        
-        if verbose:
-            print(f" No Pokemon detected after {turn_count * 2} turns")
-        
+
         return False
+
+    def flee_sequence(self, verbose=False):
+        """Execute the flee sequence: Skip battle text and flee from battle
+
+        Sequence:
+        - Press A once to skip "Wild ... appeared!" text
+        - Wait for shiny animation + menu to appear
+        - Press down, right and A to flee
+        - Press A again to skip the text "... fled!"
+        - Wait for PV to clear (back in overworld)
+
+        Args:
+            verbose: If True, print progress updates
+        """
+        # Wait for battle screen and "Wild ... appeared!" text
+        self.run_frames(400)
+
+        # Skip "Wild ... appeared!" text
+        self.press_a(hold_frames=10, release_frames=20)
+
+        # Wait for shiny animation + menu to fully appear
+        self.run_frames(320)
+
+        # Navigate to Run: Down -> Right -> A (with more breathing room)
+        self.press_down(hold_frames=15, release_frames=20)
+        self.press_right(hold_frames=15, release_frames=20)
+        self.press_a(hold_frames=15, release_frames=40)
+
+        # Skip "... fled!" text
+        self.press_a(hold_frames=10, release_frames=40)
+
+        # Clear keys
+        self.core._core.setKeys(self.core._core, 0)
+
+        # Wait for transition back to overworld
+        self.run_frames(250)
+
+        # Store current PV - encounter_sequence will wait for this to CHANGE
+        self.last_battle_pv = self.read_u32(ENEMY_PV_ADDR)
 
     def read_u32(self, address):
         """Read 32-bit unsigned integer from memory"""
@@ -387,7 +452,14 @@ class ShinyHunter:
         b2 = self.core._core.busRead8(self.core._core, address + 2)
         b3 = self.core._core.busRead8(self.core._core, address + 3)
         return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-    
+
+    def write_u32(self, address, value):
+        """Write 32-bit unsigned integer to memory"""
+        self.core._core.busWrite8(self.core._core, address, value & 0xFF)
+        self.core._core.busWrite8(self.core._core, address + 1, (value >> 8) & 0xFF)
+        self.core._core.busWrite8(self.core._core, address + 2, (value >> 16) & 0xFF)
+        self.core._core.busWrite8(self.core._core, address + 3, (value >> 24) & 0xFF)
+
     def read_u16(self, address):
         """Read 16-bit unsigned integer from memory"""
         b0 = self.core._core.busRead8(self.core._core, address)
@@ -851,7 +923,10 @@ class ShinyHunter:
             return None
 
     def hunt(self, max_attempts=None, error_retry_limit=3):
-        """Main hunting loop
+        """Main hunting loop - FLEE VERSION
+        
+        This version flees from battle instead of resetting, which may improve
+        probability for rare encounters by maintaining RNG state.
         
         Args:
             max_attempts: Maximum number of attempts (None = unlimited)
@@ -859,114 +934,107 @@ class ShinyHunter:
         """
         consecutive_errors = 0
         last_status_update = time.time()
+        initial_setup_done = False
         
+        # Do initial setup once (reset, load, RNG seed)
+        if not self.reset_to_save():
+            print("[!] Failed to load save initially. Exiting.")
+            return False
+        
+        # Initial RNG setup
+        RNG_ADDR = 0x03005D80
+        random_seed = random.randint(0, 0xFFFFFFFF)
+        random_delay = random.randint(10, 100)
+        self.run_frames(random_delay)
+        self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
+        self.run_frames(random.randint(5, 20))
+        
+        # Initial loading sequence
+        verbose = True
+        self.loading_sequence(verbose=verbose)
+        self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
+        self.run_frames(5)
+        self.run_frames(15)  # Wait for game to settle
+        
+        initial_setup_done = True
+
         while True:
             # Check max attempts
             if max_attempts and self.attempts >= max_attempts:
                 print(f"\n[!] Reached maximum attempts ({max_attempts}). Stopping.")
                 return False
-            
-            self.attempts += 1
-            
+
             try:
-                # Reset and load from .sav file
-                if not self.reset_to_save():
-                    consecutive_errors += 1
-                    print(f"[!] Failed to load save (error {consecutive_errors}/{error_retry_limit})")
-                    if consecutive_errors >= error_retry_limit:
-                        print("[!] Too many consecutive errors. Exiting.")
-                        return False
-                    time.sleep(1)  # Brief pause before retry
-                    continue
-                
-                # Reset error counter on success
-                consecutive_errors = 0
-
-                # RNG variation: Write random seed to RNG address after loading
-                # Emerald RNG seed is at 0x03005D80
-                RNG_ADDR = 0x03005D80
-                random_seed = random.randint(0, 0xFFFFFFFF)
-
-                # Also wait some frames to let things settle before writing seed
-                random_delay = random.randint(10, 100)
-                self.run_frames(random_delay)
-
-                # Write random seed to RNG memory location AFTER initial delay
-                # This ensures the game has initialized before we manipulate RNG
-                self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
-                
-                # Additional delay after writing seed to let it take effect
-                self.run_frames(random.randint(5, 20))
-
                 # Periodic status update every 10 attempts or 5 minutes
                 elapsed = time.time() - self.start_time
-                if (self.attempts % 10 == 0) or (time.time() - last_status_update > 300):
+                if self.attempts > 0 and ((self.attempts % 10 == 0) or (time.time() - last_status_update > 300)):
                     rate = self.attempts / elapsed if elapsed > 0 else 0
                     print(f"\n[Status] Attempt {self.attempts} | Rate: {rate:.2f}/s | "
                           f"Elapsed: {elapsed/60:.1f} min | Running smoothly...")
                     last_status_update = time.time()
 
-                print(f"\n[Attempt {self.attempts}] Starting new reset...")
-                print(f"  RNG Seed: 0x{random_seed:08X}, Delay: {random_delay} frames")
-                if self.target_species_name:
-                    print(f"  Target: {self.target_species_name} only (skipping others)")
-                else:
-                    print(f"  Target: All Route 102 species")
+                if self.attempts == 0:
+                    print(f"\n[*] Starting hunt...")
+                    if self.target_species_name:
+                        print(f"    Target: {self.target_species_name} (non-targets will be logged/notified)")
+                    else:
+                        print(f"    Target: All Route 102 species")
 
-                # Step 1: Execute loading sequence (15 A presses)
-                verbose = (self.attempts <= 3)  # Only verbose for first 3 attempts
-                self.loading_sequence(verbose=verbose)
+                # Execute encounter sequence (turn in place until Pokemon found)
+                pokemon_found = self.encounter_sequence(verbose=(self.attempts == 0))
 
-                # Re-write RNG seed after loading sequence to ensure it's still set
-                self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
-                self.run_frames(5)  # Small delay to let it take effect
+                if not pokemon_found:
+                    # No new Pokemon found in max_turns - just keep trying
+                    # Don't clear last_battle_pv, we're still waiting for a DIFFERENT PV
+                    continue
 
-                # Wait for game to fully settle after loading (prevents walking on later resets)
-                # This gives the game time to fully initialize player state before turning
-                self.run_frames(15)  # Wait 0.25 seconds for game to settle
+                # Wait for battle data to stabilize
+                self.run_frames(30)
 
-                # Step 2: Execute encounter sequence (turn in place)
-                pokemon_found = self.encounter_sequence(verbose=verbose)
-                
-                # Wait for Pokemon data to be fully loaded (battle structure needs time to populate)
-                # Wait longer to ensure battle has fully started and data is populated
-                # Battle structure may take longer to initialize than party structure
-                self.run_frames(300)  # 5 seconds delay to ensure battle structure is fully loaded
-                
-                # Additional check: wait until PV is non-zero and stable, and encrypted data is populated
-                stable_count = 0
-                last_pv = 0
-                for _ in range(120):  # Wait up to 2 more seconds
-                    current_pv = self.read_u32(ENEMY_PV_ADDR)
-                    if current_pv != 0 and current_pv == last_pv:
-                        # Also check if encrypted data area has non-zero values (indicates data is loaded)
-                        encrypted_check = self.read_u32(ENEMY_PV_ADDR + 32)
-                        if encrypted_check != 0 and encrypted_check != current_pv:
-                            stable_count += 1
-                            if stable_count >= 5:  # PV and encrypted data stable for 5 frames
-                                break
-                    last_pv = current_pv
-                    self.run_frames(1)
-                
-                # Check if Pokemon was found
+                # Check if Pokemon was found (PV should be non-zero)
                 pv = self.read_u32(ENEMY_PV_ADDR)
                 if pv == 0:
-                    print(f"[Attempt {self.attempts}] No Pokemon detected - resetting and retrying...")
-                    # Reset and try again (this keeps RNG fresh)
                     continue
-                
+
+                # Valid new encounter - increment attempt counter
+                self.attempts += 1
+
                 # Get Pokemon species
                 species_id, species_name = self.get_pokemon_species()
 
-                # FILTERED: Skip non-target species
-                if species_id not in self.target_species_ids:
+                # MODIFIED TARGET FILTERING: If target is set and this is NOT the target,
+                # log it, send Discord notification, save state, but CONTINUE hunting
+                if self.target_species_name and species_id not in self.target_species_ids:
                     print(f"\n[Attempt {self.attempts}] Pokemon found!")
-                    print(f"  Species: {species_name} (ID: {species_id}) - SKIPPING (not target species)")
-                    if self.target_species_name:
-                        print(f"  Resetting and continuing hunt for {self.target_species_name}...")
+                    print(f"  Species: {species_name} (ID: {species_id}) - NOT TARGET (continuing hunt)")
+                    
+                    # Check if shiny anyway (might be a shiny non-target)
+                    is_shiny, pv, shiny_value, details = self.check_shiny()
+                    
+                    if is_shiny:
+                        # Shiny non-target - treat as success!
+                        print(f"  ⚠️  SHINY {species_name} found (not target, but shiny!)")
+                        elapsed = time.time() - self.start_time
+                        
+                        # Send Discord notification (only for shiny non-targets)
+                        discord_message = (
+                            f"✨ **Shiny {species_name} found!** ✨\n\n"
+                            f"**Note:** Not target species ({self.target_species_name}), but shiny!\n"
+                            f"**Attempts:** {self.attempts}\n"
+                            f"**Personality Value:** `0x{pv:08X}`\n"
+                            f"**Shiny Value:** {shiny_value}\n"
+                            f"**Time Elapsed:** {elapsed/60:.1f} minutes"
+                        )
+                        self.send_discord_notification(discord_message, title="✨ Shiny Found (Non-Target)! ✨", color=0xffff00)
+                        
+                        # Save state
+                        self.save_game_state()
                     else:
-                        print(f"  Resetting and continuing hunt...")
-                    # Reset and continue (don't check for shiny)
+                        # Non-shiny non-target - just log (no Discord notification)
+                        pass
+                    
+                    # Flee and continue hunting
+                    self.flee_sequence(verbose=False)
                     continue
 
                 # Only check shiny if it's a target species
@@ -1051,9 +1119,10 @@ class ShinyHunter:
                     print(f"  Result: NOT SHINY (shiny value {shiny_value} >= 8)")
                     print(f"  Rate: {rate:.2f} attempts/sec | Elapsed: {elapsed/60:.1f} min")
                     print(f"  Estimated time to shiny: ~{(8192/rate)/60:.1f} minutes (1/8192 odds)")
-                    # Reset and restart the sequence (this keeps RNG fresh)
-                    print(f"  Resetting and restarting...")
-                    
+                    # Flee and continue hunting (don't reset)
+                    self.flee_sequence(verbose=False)
+                    continue  # Explicitly continue to next iteration
+
             except Exception as e:
                 consecutive_errors += 1
                 elapsed = time.time() - self.start_time
@@ -1068,13 +1137,23 @@ class ShinyHunter:
                     traceback.print_exc()
                     return False
                 
-                # Try to recover by resetting the core
+                # Try to recover by resetting the core and re-doing initial setup
                 print("[*] Attempting recovery...")
                 try:
-                    self.core.reset()
-                    self.core.autoload_save()
-                    if hasattr(self, 'screenshot_image'):
-                        self.core.set_video_buffer(self.screenshot_image)
+                    if not self.reset_to_save():
+                        raise Exception("Failed to reset to save")
+                    
+                    # Re-do initial setup
+                    RNG_ADDR = 0x03005D80
+                    random_seed = random.randint(0, 0xFFFFFFFF)
+                    random_delay = random.randint(10, 100)
+                    self.run_frames(random_delay)
+                    self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
+                    self.run_frames(random.randint(5, 20))
+                    self.loading_sequence(verbose=False)
+                    self.core._core.busWrite32(self.core._core, RNG_ADDR, random_seed)
+                    self.run_frames(5)
+                    self.run_frames(15)
                     time.sleep(2)  # Brief pause before retry
                 except Exception as recovery_error:
                     print(f"[!] Recovery failed: {recovery_error}")
@@ -1090,7 +1169,9 @@ def main():
                "Examples:\n"
                "  python route102.py --target ralts\n"
                "  python route102.py --target seedot --show-window\n"
-               "  python route102.py  # Hunt all species"
+               "  python route102.py  # Hunt all species\n\n"
+               "Note: This version uses FLEE method (flees from battle instead of resetting).\n"
+               "When --target is specified, non-target encounters are logged/notified but hunt continues."
     )
     parser.add_argument(
         '--target',
