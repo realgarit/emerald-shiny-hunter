@@ -453,13 +453,6 @@ class ShinyHunter:
         b3 = self.core._core.busRead8(self.core._core, address + 3)
         return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 
-    def write_u32(self, address, value):
-        """Write 32-bit unsigned integer to memory"""
-        self.core._core.busWrite8(self.core._core, address, value & 0xFF)
-        self.core._core.busWrite8(self.core._core, address + 1, (value >> 8) & 0xFF)
-        self.core._core.busWrite8(self.core._core, address + 2, (value >> 16) & 0xFF)
-        self.core._core.busWrite8(self.core._core, address + 3, (value >> 24) & 0xFF)
-
     def read_u16(self, address):
         """Read 16-bit unsigned integer from memory"""
         b0 = self.core._core.busRead8(self.core._core, address)

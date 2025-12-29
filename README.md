@@ -1,12 +1,12 @@
 # Pokémon Emerald Shiny Hunter
 
-Automated shiny hunting for Pokémon Emerald using mGBA. Resets the game and checks for shinies automatically, so you don't have to sit there pressing buttons for hours.
+Automated shiny hunting for Pokémon Emerald using mGBA. Checks for shinies automatically, so you don't have to sit there pressing buttons for hours.
 
 Works with starter Pokémon and wild encounters on Route 101 and Route 102.
 
 ## What it does
 
-- Resets the game automatically and checks each attempt
+- **Route 102 uses flee method**: Instead of resetting after each encounter, flees from battle and continues hunting - much faster!
 - Writes random RNG seeds to memory (Emerald starts with the same seed every reset)
 - Shows progress updates with attempt counts and rates
 - Watch the game live (Route 101 & 102) - add `--show-window` to see what's happening
@@ -126,7 +126,7 @@ You need both IDs for the shiny calculation to work correctly.
 There are separate scripts for each starter:
 
 - `torchic.py` - Hunts for shiny Torchic (middle starter)
-- `mudkip.py` - Hunts for shiny Mudkip (right starter)  
+- `mudkip.py` - Hunts for shiny Mudkip (right starter)
 - `treecko.py` - Hunts for shiny Treecko (left starter)
 
 Run whichever one you want:
@@ -135,6 +135,11 @@ Run whichever one you want:
 python3 src/torchic.py
 python3 src/mudkip.py
 python3 src/treecko.py
+
+# Watch the game while it hunts (all starter scripts support --show-window)
+python3 src/torchic.py --show-window
+python3 src/mudkip.py --show-window
+python3 src/treecko.py --show-window
 ```
 
 ### Route 101 Wild Encounters
@@ -161,9 +166,9 @@ For Route 101, your save file should be positioned on Route 101, ready to walk a
 
 ### Route 102 Wild Encounters
 
-Hunt for shiny wild Pokémon on Route 102:
+Hunt for shiny wild Pokémon on Route 102 using the **flee method** (faster than resetting!):
 
-- `route102.py` - Hunt Route 102 Pokémon with optional target filtering. Supports the same `--show-window` feature.
+- `route102.py` - Hunt Route 102 Pokémon with optional target filtering. Uses flee method instead of resetting.
 
 ```bash
 # Hunt all Route 102 species (Poochyena, Zigzagoon, Wurmple, Lotad, Seedot, Ralts)
@@ -186,8 +191,14 @@ For Route 102, your save file should be positioned on Route 102, ready to walk a
 - **Seedot** - Very rare (1% encounter rate)
 - **Ralts** - Rare (1% encounter rate) - the most sought-after early-game catch!
 
+**Target Species Behavior:** When hunting for a specific target (e.g., `--target ralts`), the script will:
+- Log and continue hunting when non-target species are found
+- Still check if non-target encounters are shiny (and notify you if so!)
+- Only stop when a shiny of ANY species is found
+
 ### What happens when you run it
 
+**For Starters and Route 101:**
 1. Loads your save file
 2. Writes a random RNG seed to memory (fixes Emerald's seed 0 bug)
 3. Presses buttons to select the starter or trigger an encounter
@@ -195,32 +206,46 @@ For Route 102, your save file should be positioned on Route 102, ready to walk a
 5. If shiny: saves screenshot, plays sound, sends notification, saves game state, stops
 6. If not shiny: reloads and tries again
 
-For Route 101, you can add `--show-window` to watch the game while it hunts. The window updates every 5th frame so it doesn't slow things down, but you can still see what's happening.
+**For Route 102 (Flee Method):**
+1. Loads your save file once at the start
+2. Writes a random RNG seed to memory
+3. Turns left/right to trigger encounters
+4. When a Pokémon appears, checks if it's shiny
+5. If shiny: saves screenshot, plays sound, sends notification, saves game state, stops
+6. If not shiny: **flees from battle** and continues turning to find the next encounter
+7. No need to reset - much faster!
+
+You can add `--show-window` to watch the game while it hunts. The window updates every 5th frame so it doesn't slow things down, but you can still see what's happening.
 
 ### Progress output
 
 You'll see something like this:
 
 ```
-[Attempt 1] Starting new reset...
-  RNG Seed: 0x12345678, Delay: 50 frames
+[*] Using FLEE method (flee from battle instead of resetting)
+[*] Starting shiny hunt on Route 102...
+
+[*] Starting hunt...
+    Target: Ralts (non-targets will be logged/notified)
 
 [Attempt 1] Pokemon found!
+  Species: Zigzagoon (ID: 263) - NOT TARGET (continuing hunt)
+
+[Attempt 2] Pokemon found!
+  Species: Poochyena (ID: 261) - NOT TARGET (continuing hunt)
+
+[Attempt 3] Pokemon found!
+  Species: Ralts (ID: 270) - TARGET SPECIES!
   PV: 0x1A2B3C4D
-  PV Low:  0x3C4D (15437)
-  PV High: 0x1A2B (6699)
-  TID ^ SID: 0xABCD (43981)
-  PV XOR: 0x2676 (9846)
   Shiny Value: 123 (need < 8 for shiny)
   Result: NOT SHINY (shiny value 123 >= 8)
-  Rate: 2.50 attempts/sec | Elapsed: 0.4 min
-  Estimated time to shiny: ~54.6 minutes (1/8192 odds)
+  Rate: 3.50 attempts/sec | Elapsed: 0.9 min
 ```
 
 Every 10 attempts or 5 minutes, you'll get a status update:
 
 ```
-[Status] Attempt 100 | Rate: 2.45/s | Elapsed: 40.8 min | Running smoothly...
+[Status] Attempt 100 | Rate: 3.45/s | Elapsed: 0.5 min | Running smoothly...
 ```
 
 ## How it works
@@ -244,6 +269,25 @@ If `Shiny_Value < 8`, it's shiny.
 - Personality Value: `0x020244EC` (party Pokémon) or `0x02024744` (enemy/wild Pokémon)
 - Species ID: `0x020244F4` (party, PV + 0x08) or `0x0202474C` (enemy, PV + 0x08)
 - RNG Seed: `0x03005D80` (used for RNG manipulation)
+
+### Flee Method (Route 102)
+
+The flee method is faster than resetting because:
+1. No need to reload the save file each attempt
+2. No need to go through the loading sequence (15 A presses)
+3. Battle transitions are faster than full resets
+4. RNG state is maintained between encounters
+
+The script:
+1. Detects when a new Pokémon appears (by monitoring the Personality Value in memory)
+2. Checks if it's shiny
+3. If not shiny, navigates to "Run" in the battle menu (Down → Right → A)
+4. Returns to the overworld and continues turning to trigger the next encounter
+5. Tracks the last direction faced to avoid accidentally walking when turning
+
+### Direction Tracking
+
+After fleeing from battle, the character returns facing the same direction they were facing when the battle started. The script tracks this and always starts turning in the **opposite** direction to avoid accidentally walking a tile.
 
 ### Wild Pokémon species identification (Route 101 & Route 102)
 
@@ -344,10 +388,11 @@ Emerald has a bug where the RNG starts at the same value every reset. The script
 
 ### Stability
 
+- All scripts use `mgba.log.silence()` to suppress mGBA debug output (prevents I/O blocking)
 - Automatic retry (up to 3 consecutive errors)
 - Status updates every 10 attempts or 5 minutes
-- Resets and reloads save on errors
-- Core is reset each iteration, file handles closed properly
+- Resets and reloads save on errors (starter scripts and route101)
+- Route 102 uses flee method - only resets on critical errors
 - Everything is logged to `logs/shiny_hunt_YYYYMMDD_HHMMSS.log`
 - Can run indefinitely without memory leaks
 
@@ -361,7 +406,7 @@ Edit these in the script you're using:
 
 ### Discord Webhook Notifications (Optional)
 
-Route 102 script supports Discord webhook notifications in addition to macOS notifications. To enable:
+All scripts support Discord webhook notifications in addition to macOS notifications. To enable:
 
 **Option 1: Using .env file (Recommended)**
 
@@ -375,10 +420,11 @@ Route 102 script supports Discord webhook notifications in addition to macOS not
    ```bash
    pip3 install python-dotenv
    ```
-   If `python-dotenv` is not installed, the script will still work but won't load the `.env` file automatically.
+   If `python-dotenv` is not installed, the scripts will still work but won't load the `.env` file automatically.
 
-3. Run the script as usual:
+3. Run any script as usual:
    ```bash
+   python3 src/torchic.py
    python3 src/route102.py
    ```
 
@@ -387,10 +433,10 @@ Route 102 script supports Discord webhook notifications in addition to macOS not
 Alternatively, you can set the environment variable directly:
 ```bash
 export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/YOUR_WEBHOOK_URL"
-python3 src/route102.py
+python3 src/torchic.py
 ```
 
-The script will send a Discord notification when a shiny is found. If the webhook URL is not set, the script will skip Discord notifications silently (no errors).
+All scripts will send a Discord notification when a shiny is found. If the webhook URL is not set, Discord notifications are silently skipped (no errors).
 
 **Note:** The `.env` file is already in `.gitignore`, so your webhook URL won't be committed to the repository.
 
@@ -446,13 +492,20 @@ Screenshots might not work if mGBA is running headless (no visible window). The 
 
 ### No shiny after many attempts
 
-Shiny odds are 1/8192 in Generation III. It can take thousands of resets. The script shows an estimated time based on your current rate.
+Shiny odds are 1/8192 in Generation III. It can take thousands of attempts. The script shows an estimated time based on your current rate.
 
 ### Script stops with errors
 
 - Check the log file in `logs/` for details
 - Make sure your ROM and save files are valid
 - Double-check your TID and SID are correct
+
+### Character walks instead of turning (Route 102)
+
+If the character occasionally walks a tile instead of turning in place:
+- This is handled automatically by the direction tracking system
+- The script starts turning in the opposite direction after fleeing to prevent this
+- If it happens frequently, the timing values in the script may need adjustment
 
 ## Other tools
 
@@ -473,7 +526,7 @@ emerald-shiny-hunter/
 │   ├── mudkip.py               # Shiny hunt for Mudkip
 │   ├── treecko.py              # Shiny hunt for Treecko
 │   ├── route101.py             # Route 101 wild encounters (with optional target filtering and live window)
-│   ├── route102.py             # Route 102 wild encounters (Lotad, Seedot, Ralts + Route 101 Pokémon)
+│   ├── route102.py             # Route 102 wild encounters (flee method - faster!)
 │   ├── combine_shinies.py      # Combine shinies from multiple saves
 │   └── debug/                  # Debug scripts that found memory addresses
 │       ├── find_species_address.py

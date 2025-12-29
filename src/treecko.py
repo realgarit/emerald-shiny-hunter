@@ -8,6 +8,8 @@ Identifies Pokemon species from memory to verify which starter was obtained.
 
 Features:
 - Identifies Pokemon species from memory (Torchic, Treecko, or Mudkip)
+- Live visualization with --show-window flag
+- Discord webhook notifications (optional)
 - Error handling with automatic retry (up to 3 consecutive errors)
 - Periodic status updates every 10 attempts or 5 minutes
 - Automatic recovery on errors (resets core and reloads save)
@@ -18,13 +20,28 @@ Features:
 
 import mgba.core
 import mgba.image
+import mgba.log
 import random
 import subprocess
 import time
 import os
 import sys
+import json
+import argparse
 from datetime import datetime
 from pathlib import Path
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
+import cv2
+import numpy as np
+from cffi import FFI
+
+# Try to load dotenv for Discord webhook configuration
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv not installed, will use environment variables directly
 
 # Get project root directory (parent of src/)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -71,14 +88,16 @@ KEY_LEFT = 32  # bit 5
 
 
 class ShinyHunter:
-    def __init__(self, suppress_debug=True):
+    def __init__(self, suppress_debug=True, show_window=False):
+        self.show_window = show_window
+
         # Set up logging
         self.log_dir = PROJECT_ROOT / "logs"
         self.log_dir.mkdir(exist_ok=True)
-        
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.log_file = self.log_dir / f"shiny_hunt_{timestamp}.log"
-        
+
         # Create a Tee class to write to both console and file
         class Tee:
             def __init__(self, *files):
@@ -93,29 +112,36 @@ class ShinyHunter:
             def isatty(self):
                 # Return True so print() doesn't add extra newlines
                 return True
-        
+
         # Open log file and set up tee
         self.log_file_handle = open(self.log_file, 'w', encoding='utf-8')
         self.original_stdout = sys.stdout
         sys.stdout = Tee(sys.stdout, self.log_file_handle)
-        
-        # Suppress GBA debug output by redirecting stderr
+
+        # Suppress GBA debug output using mGBA's logging system
+        # This is more effective than stderr redirection as it stops logging at the source
         if suppress_debug:
-            self.original_stderr = sys.stderr
-            self.null_file = open(os.devnull, 'w')
-            sys.stderr = self.null_file
-        
+            mgba.log.silence()
+
         self.core = mgba.core.load_path(ROM_PATH)
         if not self.core:
             raise RuntimeError(f"Failed to load ROM: {ROM_PATH}")
 
         self.core.reset()
         self.core.autoload_save()  # Load the .sav file
-        
+
         # Set up video buffer for screenshots (after reset/load)
         self.screenshot_image = mgba.image.Image(240, 160)
         self.core.set_video_buffer(self.screenshot_image)
-        
+
+        # Set up visualization window if enabled
+        if self.show_window:
+            self.window_name = "Shiny Hunter - Treecko"
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(self.window_name, 480, 320)
+        self.frame_counter = 0
+        self.frame_skip = 5  # Update window every 5th frame
+
         self.attempts = 0
         self.start_time = time.time()
 
@@ -128,18 +154,36 @@ class ShinyHunter:
         print(f"[*] Starting shiny hunt...\n")
     
     def cleanup(self):
-        """Restore stdout/stderr and close log file"""
+        """Restore stdout, close log file, and close OpenCV windows"""
+        # Close OpenCV windows if they were created
+        if self.show_window:
+            try:
+                cv2.destroyAllWindows()
+            except:
+                pass
+
         if hasattr(self, 'log_file_handle') and self.log_file_handle:
             sys.stdout = self.original_stdout
             self.log_file_handle.close()
-        if hasattr(self, 'null_file') and self.null_file:
-            sys.stderr = self.original_stderr
-            self.null_file.close()
-            self.null_file = None
-    
+
     def __del__(self):
-        """Restore stdout/stderr when object is destroyed"""
+        """Restore stdout when object is destroyed"""
         self.cleanup()
+
+    def _update_display_window(self):
+        """Update the visualization window with current frame"""
+        try:
+            # Get frame data from mGBA
+            ffi = FFI()
+            width = self.screenshot_image.width
+            height = self.screenshot_image.height
+            buffer = ffi.buffer(self.screenshot_image.buffer, width * height * 4)
+            frame = np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 4))
+            # Convert from RGBA to BGR for OpenCV
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+            cv2.imshow(self.window_name, frame_bgr)
+        except Exception as e:
+            pass
 
     def reset_to_save(self):
         """Reset and load from .sav file"""
@@ -158,6 +202,12 @@ class ShinyHunter:
         """Advance emulation by specified number of frames"""
         for _ in range(count):
             self.core.run_frame()
+            self.frame_counter += 1
+            # Update visualization window (with frame skip for performance) if enabled
+            if self.show_window:
+                if self.frame_counter % self.frame_skip == 0:
+                    self._update_display_window()
+                    cv2.waitKey(1)  # Only call when updating display
 
     def press_a(self, hold_frames=5, release_frames=5):
         """Press and release A button"""
@@ -544,11 +594,44 @@ class ShinyHunter:
                 print(f"[+] Save file updated: {sav_path}")
             else:
                 print(f"[!] Note: Save file may be at: {sav_path}")
-            
+
             return str(save_state_filename)
         except Exception as e:
             print(f"[!] Failed to save game state: {e}")
             return None
+
+    def send_discord_notification(self, message, title="Shiny Hunter Notification", color=0x00ff00):
+        """Send a Discord webhook notification
+
+        Args:
+            message: The message content
+            title: The embed title
+            color: The embed color (default: green)
+        """
+        webhook_url = os.environ.get('DISCORD_WEBHOOK_URL')
+        if not webhook_url:
+            return  # No webhook configured, skip silently
+
+        try:
+            embed = {
+                "title": title,
+                "description": message,
+                "color": color,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+            payload = {
+                "embeds": [embed]
+            }
+
+            data = json.dumps(payload).encode('utf-8')
+            req = Request(webhook_url, data=data, headers={'Content-Type': 'application/json'})
+            urlopen(req, timeout=10)
+            print("[+] Discord notification sent!")
+        except (URLError, HTTPError) as e:
+            print(f"[!] Failed to send Discord notification: {e}")
+        except Exception as e:
+            print(f"[!] Discord notification error: {e}")
 
     def hunt(self, max_attempts=None, error_retry_limit=3):
         """Main hunting loop
@@ -684,7 +767,17 @@ class ShinyHunter:
                             f"Shiny {species_name} found after {self.attempts} attempts!",
                             f"PV: 0x{pv:08X} | Time: {elapsed/60:.1f} min"
                         )
-                        
+
+                        # Send Discord notification
+                        discord_message = (
+                            f"**Pokemon:** {species_name}\n"
+                            f"**Attempts:** {self.attempts}\n"
+                            f"**Personality Value:** `0x{pv:08X}`\n"
+                            f"**Shiny Value:** {shiny_value}\n"
+                            f"**Time Elapsed:** {elapsed/60:.1f} minutes"
+                        )
+                        self.send_discord_notification(discord_message, title=f"✨ Shiny {species_name} Found! ✨")
+
                         # Save game state so user can continue playing
                         print(f"\n[+] Saving game state...")
                         save_state_path = self.save_game_state()
@@ -743,10 +836,14 @@ class ShinyHunter:
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Hunt for shiny Treecko in Pokemon Emerald')
+    parser.add_argument('--show-window', action='store_true',
+                        help='Show live visualization window')
+    args = parser.parse_args()
+
     hunter = None
     try:
-        # Suppress GBA debug output by default
-        hunter = ShinyHunter(suppress_debug=True)
+        hunter = ShinyHunter(suppress_debug=True, show_window=args.show_window)
         hunter.hunt()
     except KeyboardInterrupt:
         print("\n[!] Hunt interrupted by user.")
@@ -755,7 +852,6 @@ def main():
         import traceback
         traceback.print_exc()
     finally:
-        # Always restore stderr
         if hunter:
             hunter.cleanup()
 

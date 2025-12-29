@@ -19,6 +19,7 @@ Features:
 
 import mgba.core
 import mgba.image
+import mgba.log
 import random
 import subprocess
 import time
@@ -134,13 +135,12 @@ class ShinyHunter:
         self.log_file_handle = open(self.log_file, 'w', encoding='utf-8')
         self.original_stdout = sys.stdout
         sys.stdout = Tee(sys.stdout, self.log_file_handle)
-        
-        # Suppress GBA debug output by redirecting stderr
+
+        # Suppress GBA debug output using mGBA's logging system
+        # This is more effective than stderr redirection as it stops logging at the source
         if suppress_debug:
-            self.original_stderr = sys.stderr
-            self.null_file = open(os.devnull, 'w')
-            sys.stderr = self.null_file
-        
+            mgba.log.silence()
+
         self.core = mgba.core.load_path(ROM_PATH)
         if not self.core:
             raise RuntimeError(f"Failed to load ROM: {ROM_PATH}")
@@ -221,21 +221,17 @@ class ShinyHunter:
             pass
     
     def cleanup(self):
-        """Restore stdout/stderr, close log file, and close OpenCV windows"""
+        """Restore stdout, close log file, and close OpenCV windows"""
         # Close OpenCV windows if they were created
         if self.show_window:
             try:
                 cv2.destroyAllWindows()
             except:
                 pass
-        
+
         if hasattr(self, 'log_file_handle') and self.log_file_handle:
             sys.stdout = self.original_stdout
             self.log_file_handle.close()
-        if hasattr(self, 'null_file') and self.null_file:
-            sys.stderr = self.original_stderr
-            self.null_file.close()
-            self.null_file = None
     
     def __del__(self):
         """Restore stdout/stderr when object is destroyed"""
@@ -258,13 +254,12 @@ class ShinyHunter:
         """Advance emulation by specified number of frames"""
         for _ in range(count):
             self.core.run_frame()
+            self.frame_counter += 1
             # Update visualization window (with frame skip for performance) if enabled
             if self.show_window:
-                self.frame_counter += 1
                 if self.frame_counter % self.frame_skip == 0:
                     self._update_display_window()
-                # Critical for macOS: call waitKey to prevent window freezing
-                cv2.waitKey(1)
+                    cv2.waitKey(1)  # Only call when updating display
 
     def press_a(self, hold_frames=5, release_frames=5):
         """Press and release A button"""
