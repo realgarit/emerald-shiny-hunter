@@ -257,12 +257,7 @@ shiny_value = (TID ^ SID) ^ (PV_low ^ PV_high)
 
 ### Memory Addresses
 
-| Data | Address |
-|------|---------|
-| Party Pokemon PV | `0x020244EC` |
-| Enemy Pokemon PV | `0x02024744` |
-| RNG Seed | `0x03005D80` |
-| PC Storage Pointer | `0x03005D94` |
+All memory addresses are defined in `constants/memory.py`.
 
 ### RNG Fix
 
@@ -277,18 +272,9 @@ Route 102 uses flee method because:
 
 ### Species ID Mapping
 
-Pokemon Emerald uses internal species IDs that differ from National Dex numbers:
+Pokemon Emerald uses internal species IDs that differ from National Dex numbers. Gen I/II Pokemon (1-251) have matching IDs, but Gen III Pokemon use different internal IDs.
 
-| Pokemon | National Dex | Internal ID | Offset |
-|---------|--------------|-------------|--------|
-| Poochyena | 261 | 286 | -25 |
-| Zigzagoon | 263 | 288 | -25 |
-| Wurmple | 265 | 290 | -25 |
-| Lotad | 270 | 295 | -25 |
-| Seedot | 273 | 298 | -25 |
-| Ralts | 280 | 392 | -112 |
-
-The scripts handle this conversion automatically.
+All 386 Pokemon mappings are in `constants/species.py`, sourced from pokeemerald's `species.h`. Helper functions `get_national_dex()` and `get_internal_id()` handle conversions automatically.
 
 ## Troubleshooting
 
@@ -329,10 +315,24 @@ emerald-shiny-hunter/
 │   ├── torchic.py                  # Torchic starter hunt
 │   ├── mudkip.py                   # Mudkip starter hunt
 │   ├── treecko.py                  # Treecko starter hunt
-│   ├── route101.py                 # Route 101 wild encounters
+│   ├── route101.py                 # Route 101 wild encounters (flee method)
 │   ├── route102.py                 # Route 102 wild encounters (flee method)
 │   ├── combine_starter_shinies.py  # Combine starters into one party
 │   ├── combine_box_shinies.py      # Combine shinies into PC boxes
+│   ├── constants/                  # Shared constants
+│   │   ├── __init__.py             # Package exports
+│   │   ├── species.py              # All 411 species IDs from pokeemerald + National Dex mappings
+│   │   ├── memory.py               # Memory addresses (party, enemy, box, RNG)
+│   │   └── keys.py                 # GBA button constants and timing
+│   ├── utils/                      # Shared utilities
+│   │   ├── __init__.py             # Package exports
+│   │   ├── memory.py               # Memory read/write functions
+│   │   ├── pokemon.py              # Species decryption, shiny checking
+│   │   ├── logging.py              # Tee class, LogManager
+│   │   ├── notifications.py        # macOS and Discord notifications
+│   │   └── savestate.py            # Screenshot and save state management
+│   ├── core/                       # Core components
+│   │   └── emulator.py             # EmulatorBase class
 │   └── debug/
 │       ├── create_base_savestate.py    # Create base save with box data
 │       └── test_discord_webhook.py     # Test Discord notifications
