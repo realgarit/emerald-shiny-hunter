@@ -1,20 +1,6 @@
 #!/usr/bin/env python3
 """
-Pokémon Emerald Shiny Hunter - Route 101
-Uses mGBA Python bindings to hunt for shiny wild Pokémon on Route 101
-
-Loads from .sav file and presses buttons to trigger wild encounters.
-Identifies Pokemon species from memory and can filter by target species.
-
-Features:
-- Identifies Pokemon species from memory (Poochyena, Zigzagoon, or Wurmple)
-- Optional target species filtering via --target flag (hunt specific Pokémon only)
-- Error handling with automatic retry (up to 3 consecutive errors)
-- Periodic status updates every 10 attempts or 5 minutes
-- Automatic recovery on errors (resets core and reloads save)
-- Memory management: core is reset each iteration, file handles properly closed
-- Logging to file for persistence
-- Can run indefinitely (no memory leaks expected)
+Shiny hunt for wild Pokemon on Route 101.
 """
 
 import mgba.core

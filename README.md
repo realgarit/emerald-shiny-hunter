@@ -498,13 +498,53 @@ Shiny odds are 1/8192 in Generation III. It can take thousands of attempts. The 
 
 ## Other tools
 
-### Combine shinies
+### Combine Starter Shinies
 
-`combine_shinies.py` - Takes shiny Pokémon from different save states and puts them all in one save file. Useful if you want all three starters shiny in one game.
+[combine_starter_shinies.py](src/combine_starter_shinies.py) - Combines your 3 shiny starters (Treecko, Torchic, Mudkip) from different save states into one party.
 
+**How it works:**
+1. Scans `save_states/` folder for shiny starter save states (files with "mudkip", "torchic", or "treecko" in the name)
+2. Extracts the 100-byte Pokémon data from party slot 1 of each save state
+3. Uses the first found save as the base (keeps its slot 1 Pokémon)
+4. Writes the other starters' data to party slots 2 and 3
+5. Updates the party count and saves a new combined save state
+
+**Usage:**
 ```bash
-python3 src/combine_shinies.py
+python3 src/combine_starter_shinies.py
 ```
+
+**Output:** Creates `combined_shinies_YYYYMMDD_HHMMSS.ss0` in `save_states/` that you can load in mGBA to play with all three shiny starters in your party.
+
+### Combine Box Shinies
+
+[combine_box_shinies.py](src/combine_box_shinies.py) - Combines shiny Pokemon from multiple hunting sessions into PC boxes.
+
+When running multiple shiny hunting instances (e.g., hunting on Route 102), each instance saves the shiny Pokemon in a battle save state. This script extracts those shinies and adds them to your PC boxes.
+
+**Setup (one-time):**
+1. First, create a base save state with your box data loaded:
+   ```bash
+   python3 src/debug/create_base_savestate.py
+   ```
+   This loads your `.sav` file, waits for box data to load into RAM, and creates `base_with_boxes.ss0`.
+
+**Usage:**
+```bash
+python3 src/combine_box_shinies.py
+```
+
+**How it works:**
+1. Loads `base_with_boxes.ss0` (contains your current box Pokemon)
+2. Scans all boxes to find existing Pokemon and the first empty slot
+3. Extracts shiny Pokemon from all `*.ss0` files (from the enemy battle slot)
+4. Adds them to boxes starting from the first empty slot
+5. Never overwrites existing Pokemon - always finds empty slots first
+6. Saves a new combined save state
+
+**Output:** Creates `combined_boxes_YYYYMMDD_HHMMSS.ss0` - load this in mGBA and save in-game to persist your Pokemon.
+
+**Note:** The shiny save states store Pokemon in the enemy battle slot (address `0x02024744`), not the party. The script automatically extracts from the correct location.
 
 ## Project structure
 
@@ -514,16 +554,13 @@ emerald-shiny-hunter/
 │   ├── torchic.py              # Shiny hunt for Torchic
 │   ├── mudkip.py               # Shiny hunt for Mudkip
 │   ├── treecko.py              # Shiny hunt for Treecko
-│   ├── route101.py             # Route 101 wild encounters (with optional target filtering and live window)
-│   ├── route102.py             # Route 102 wild encounters (flee method - faster!)
-│   ├── combine_shinies.py      # Combine shinies from multiple saves
-│   └── debug/                  # Debug scripts that found memory addresses
-│       ├── find_species_address.py
-│       ├── find_enemy_species_address.py
-│       ├── scan_enemy_structure.py
-│       ├── test_fast_presses.py
-│       ├── test_decryption.py
-│       └── test_mudkip_sequences_comprehensive.py
+│   ├── route101.py             # Route 101 wild encounters
+│   ├── route102.py             # Route 102 wild encounters (flee method)
+│   ├── combine_starter_shinies.py  # Combine starter shinies into party
+│   ├── combine_box_shinies.py  # Combine wild shinies into PC boxes
+│   └── debug/
+│       ├── create_base_savestate.py  # Create base save state from .sav file
+│       └── test_discord_webhook.py   # Test Discord webhook notifications
 ├── roms/                       # ROM and save files (gitignored)
 ├── screenshots/                # Screenshots when shiny found (gitignored)
 ├── save_states/                # Save states (gitignored)

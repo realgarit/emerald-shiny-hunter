@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to combine 3 shiny starter Pokemon from different save states into one save file.
-
-Extracts Pokemon data from save states and writes them to party slots programmatically.
+Combine shiny starter Pokemon from different save states into one party.
 """
 
 import mgba.core

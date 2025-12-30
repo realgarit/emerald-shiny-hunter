@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for Discord webhook notifications
-This will send a test message to verify the webhook is working correctly.
+Test Discord webhook notifications.
 """
 
 import os

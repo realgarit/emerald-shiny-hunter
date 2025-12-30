@@ -1,21 +1,6 @@
 #!/usr/bin/env python3
 """
-Pokémon Emerald Shiny Hunter - Mudkip
-Uses mGBA Python bindings to hunt for shiny Mudkip starter
-
-Loads from .sav file and presses buttons to select Mudkip.
-Identifies Pokemon species from memory to verify which starter was obtained.
-
-Features:
-- Identifies Pokemon species from memory (Torchic, Treecko, or Mudkip)
-- Live visualization with --show-window flag
-- Discord webhook notifications (optional)
-- Error handling with automatic retry (up to 3 consecutive errors)
-- Periodic status updates every 10 attempts or 5 minutes
-- Automatic recovery on errors (resets core and reloads save)
-- Memory management: core is reset each iteration, file handles properly closed
-- Logging to file for persistence
-- Can run indefinitely (no memory leaks expected)
+Shiny hunt for Mudkip starter.
 """
 
 import mgba.core
