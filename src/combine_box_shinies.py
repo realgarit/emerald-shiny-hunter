@@ -248,6 +248,7 @@ def combine_box_shinies():
     print("=" * 70)
 
     pokemon_to_add = []
+    processed_saves = []  # Track successfully processed save states
     for save_path in sorted(shiny_saves):
         try:
             party_data, species_name, pv = extract_pokemon_from_save(save_path)
@@ -258,6 +259,7 @@ def combine_box_shinies():
                     'pv': pv,
                     'source': save_path.name
                 })
+                processed_saves.append(save_path)
         except Exception as e:
             print(f"    [!] Failed: {e}")
 
@@ -351,23 +353,32 @@ def combine_box_shinies():
     print(f"\n[+] Saved: {output_path.name}")
     print(f"[+] Added {added} Pokemon to boxes!")
 
+    # Archive processed save states
+    print("\n" + "=" * 70)
+    print("Archiving processed save states")
+    print("=" * 70)
+
+    archive_dir = SAVE_STATES_DIR / "archive"
+    archive_dir.mkdir(exist_ok=True)
+
+    archived = 0
+    for save_path in processed_saves:
+        try:
+            dest = archive_dir / save_path.name
+            save_path.rename(dest)
+            print(f"    Archived: {save_path.name}")
+            archived += 1
+        except Exception as e:
+            print(f"    [!] Failed to archive {save_path.name}: {e}")
+
+    print(f"\n[+] Archived {archived} save state(s) to archive/")
+
     print("\n" + "=" * 70)
     print("Done!")
     print("=" * 70)
     print(f"\nLoad '{output_path.name}' in mGBA to see your Pokemon in the boxes.")
 
 def main():
-    print()
-    print("Shiny Box Combiner")
-    print("=" * 70)
-    print()
-    print("Combines shiny Pokemon from save states into PC boxes.")
-    print()
-    print("Requirements:")
-    print("  - base.ss0: Save state with PC boxes open")
-    print("  - Other .ss0 files: Individual shiny Pokemon save states")
-    print()
-
     combine_box_shinies()
 
 if __name__ == "__main__":
