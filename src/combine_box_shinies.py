@@ -11,6 +11,23 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from constants import (
+    G_POKEMON_STORAGE_PTR, BOX_DATA_OFFSET,
+    BOX_POKEMON_SIZE, POKEMON_PER_BOX, NUM_BOXES,
+    PARTY_SLOT_1_ADDR, PARTY_SLOT_SIZE,
+    ENEMY_PV_ADDR,
+    SPECIES_NAMES, NATIONAL_DEX, INTERNAL_TO_NATIONAL,
+    get_national_dex, get_species_name,
+)
+from utils import (
+    read_u32, read_u8, read_bytes, write_bytes,
+    get_substructure_order, convert_party_to_box,
+)
+from constants.memory import SUBSTRUCTURE_SIZE, POKEMON_ENCRYPTED_OFFSET
+
 # Suppress GBA debug output
 sys.stderr = open(os.devnull, 'w')
 mgba.log.silence()
@@ -19,76 +36,9 @@ PROJECT_ROOT = Path(__file__).parent.parent
 ROM_PATH = str(PROJECT_ROOT / "roms" / "Pokemon - Emerald Version (U).gba")
 SAVE_STATES_DIR = PROJECT_ROOT / "save_states"
 
-# Memory addresses
-G_POKEMON_STORAGE_PTR = 0x03005D94
-BOX_DATA_OFFSET = 4  # Box data starts 4 bytes after storage pointer
+# Party Pokemon size (100 bytes, vs 80 for box)
+PARTY_POKEMON_SIZE = 100
 
-# Structure sizes
-BOX_POKEMON_SIZE = 80   # 80 bytes per Pokemon in box
-PARTY_POKEMON_SIZE = 100  # 100 bytes per Pokemon in party
-POKEMON_PER_BOX = 30
-NUM_BOXES = 14
-
-# Party slot address
-PARTY_SLOT_1_ADDR = 0x020244EC
-
-# Enemy Pokemon address (where shiny wild Pokemon are during battle)
-ENEMY_PV_ADDR = 0x02024744
-
-# Species ID mappings (internal -> name)
-# Internal IDs need offset correction to match National Dex
-INTERNAL_SPECIES = {
-    286: ("Poochyena", -25),   # 286 - 25 = 261
-    288: ("Zigzagoon", -25),   # 288 - 25 = 263
-    290: ("Wurmple", -25),     # 290 - 25 = 265
-    295: ("Lotad", -25),       # 295 - 25 = 270
-    298: ("Seedot", -25),      # 298 - 25 = 273
-    392: ("Ralts", -122),      # 392 - 122 = 270 (unique offset!)
-}
-
-# National Dex IDs (for display)
-NATIONAL_SPECIES = {
-    261: "Poochyena",
-    263: "Zigzagoon",
-    265: "Wurmple",
-    270: "Lotad",
-    273: "Seedot",
-    277: "Treecko",
-    280: "Torchic",
-    283: "Mudkip",
-}
-
-def read_u32(core, address):
-    """Read 32-bit unsigned integer from memory"""
-    b0 = core._core.busRead8(core._core, address)
-    b1 = core._core.busRead8(core._core, address + 1)
-    b2 = core._core.busRead8(core._core, address + 2)
-    b3 = core._core.busRead8(core._core, address + 3)
-    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-
-def read_u8(core, address):
-    """Read 8-bit unsigned integer from memory"""
-    return core._core.busRead8(core._core, address)
-
-def read_bytes(core, address, length):
-    """Read multiple bytes from memory"""
-    return bytes([core._core.busRead8(core._core, address + i) for i in range(length)])
-
-def write_bytes(core, address, data):
-    """Write multiple bytes to memory"""
-    for i, byte in enumerate(data):
-        core._core.busWrite8(core._core, address + i, byte)
-
-def get_substructure_order(pv):
-    """Get the order of substructures based on PV"""
-    order_index = pv % 24
-    orders = [
-        "GAEM", "GAME", "GEAM", "GEMA", "GMAE", "GMEA",
-        "AGEM", "AGME", "AEGM", "AEMG", "AMGE", "AMEG",
-        "EGAM", "EGMA", "EAGM", "EAMG", "EMGA", "EMAG",
-        "MGAE", "MGEA", "MAGE", "MAEG", "MEGA", "MEAG"
-    ]
-    return orders[order_index]
 
 def decrypt_species(core, base_addr, struct_size=80):
     """
@@ -105,31 +55,45 @@ def decrypt_species(core, base_addr, struct_size=80):
     # Encrypted data at offset 0x20
     order = get_substructure_order(pv)
     growth_pos = order.index('G')
-    enc_offset = growth_pos * 12
+    enc_offset = growth_pos * SUBSTRUCTURE_SIZE
 
-    enc_addr = base_addr + 0x20 + enc_offset
+    enc_addr = base_addr + POKEMON_ENCRYPTED_OFFSET + enc_offset
     enc_val = read_u32(core, enc_addr)
     xor_key = otid ^ pv
     dec_val = enc_val ^ xor_key
     species_id = dec_val & 0xFFFF
 
-    # Try to get species name
-    # First check if it's an internal ID
-    if species_id in INTERNAL_SPECIES:
-        name, offset = INTERNAL_SPECIES[species_id]
-        return pv, species_id, name
+    # Try to get species name using centralized lookups
+    # First check if it's a known internal ID
+    if species_id in SPECIES_NAMES:
+        return pv, species_id, SPECIES_NAMES[species_id]
 
-    # Check if it's a National Dex ID
-    if species_id in NATIONAL_SPECIES:
-        return pv, species_id, NATIONAL_SPECIES[species_id]
+    # Check if it's a National Dex number and convert to internal
+    if species_id in NATIONAL_DEX:
+        internal_id = NATIONAL_DEX[species_id]
+        if internal_id in SPECIES_NAMES:
+            return pv, internal_id, SPECIES_NAMES[internal_id]
 
-    # Try offset corrections
-    for offset in [-25, -122]:
+    # Try reverse lookup (species_id might be internal, check for national dex name)
+    national_dex = get_national_dex(species_id)
+    if national_dex > 0:
+        # We found a valid national dex, get the name
+        name = get_species_name(species_id)
+        if not name.startswith("Unknown"):
+            return pv, species_id, name
+
+    # Fallback: try +/- 25 offset (Gen III internal vs national)
+    for offset in [-25, 25]:
         corrected = species_id + offset
-        if corrected in NATIONAL_SPECIES:
-            return pv, species_id, NATIONAL_SPECIES[corrected]
+        if corrected in SPECIES_NAMES:
+            return pv, corrected, SPECIES_NAMES[corrected]
+        if corrected in NATIONAL_DEX:
+            internal_id = NATIONAL_DEX[corrected]
+            if internal_id in SPECIES_NAMES:
+                return pv, internal_id, SPECIES_NAMES[internal_id]
 
     return pv, species_id, f"Unknown({species_id})"
+
 
 def get_box_storage_base(core):
     """Get the base address where box Pokemon data starts."""
@@ -137,6 +101,7 @@ def get_box_storage_base(core):
     if storage_ptr == 0:
         return None
     return storage_ptr + BOX_DATA_OFFSET
+
 
 def get_box_slot_address(box_base, box_num, slot_num):
     """
@@ -146,6 +111,7 @@ def get_box_slot_address(box_base, box_num, slot_num):
     """
     offset = (box_num * POKEMON_PER_BOX + slot_num) * BOX_POKEMON_SIZE
     return box_base + offset
+
 
 def scan_boxes(core, box_base):
     """Scan all boxes and return occupancy info."""
@@ -174,12 +140,6 @@ def scan_boxes(core, box_base):
 
     return first_empty
 
-def convert_party_to_box(party_data):
-    """
-    Convert 100-byte party Pokemon to 80-byte box format.
-    Box format uses only the first 80 bytes.
-    """
-    return party_data[:BOX_POKEMON_SIZE]
 
 def extract_pokemon_from_save(save_path):
     """Load a save state and extract the shiny Pokemon from enemy slot (during battle)."""
@@ -208,6 +168,7 @@ def extract_pokemon_from_save(save_path):
     print(f"    Extracted: {species_name} (ID={species_id}, PV=0x{pv:08X})")
 
     return enemy_data, species_name, pv
+
 
 def combine_box_shinies():
     """Main function to combine shinies into PC boxes."""
@@ -378,8 +339,10 @@ def combine_box_shinies():
     print("=" * 70)
     print(f"\nLoad '{output_path.name}' in mGBA to see your Pokemon in the boxes.")
 
+
 def main():
     combine_box_shinies()
+
 
 if __name__ == "__main__":
     main()

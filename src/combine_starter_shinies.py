@@ -4,95 +4,56 @@ Combine shiny starter Pokemon from different save states into one party.
 """
 
 import mgba.core
+import mgba.log
 import os
 import sys
 from pathlib import Path
 from datetime import datetime
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from constants import (
+    PARTY_COUNT_ADDR, PARTY_SLOT_1_ADDR, PARTY_SLOT_SIZE,
+    SPECIES_TREECKO, SPECIES_TORCHIC, SPECIES_MUDKIP,
+    SPECIES_NAMES, STARTER_SPECIES,
+)
+from constants.memory import SUBSTRUCTURE_SIZE, POKEMON_ENCRYPTED_OFFSET
+from utils import (
+    read_u32, read_u16, read_u8, read_bytes,
+    write_u8, write_bytes,
+    get_substructure_order,
+)
+
 # Suppress GBA debug output
 sys.stderr = open(os.devnull, 'w')
+mgba.log.silence()
 
 PROJECT_ROOT = Path(__file__).parent.parent
 ROM_PATH = str(PROJECT_ROOT / "roms" / "Pokemon - Emerald Version (U).gba")
 SAVE_STATES_DIR = PROJECT_ROOT / "save_states"
 
-# Memory addresses for party Pokemon slots
-# Each Pokemon is 100 bytes (0x64)
-# Slot 1: 0x020244EC
-# Slot 2: 0x020244EC + 0x64 = 0x02024550
-# Slot 3: 0x02024550 + 0x64 = 0x020245B4
-PARTY_SLOT_SIZE = 0x64  # 100 bytes per Pokemon
-PARTY_SLOT_1_ADDR = 0x020244EC
-PARTY_SLOT_2_ADDR = 0x02024550
-PARTY_SLOT_3_ADDR = 0x020245B4
-
-# Party count address (1 byte, number of Pokemon in party)
-PARTY_COUNT_ADDR = 0x020244E9
-
-POKEMON_SPECIES = {
-    277: "Treecko",
-    280: "Torchic",
-    283: "Mudkip",
-}
-
-def read_u32(core, address):
-    """Read 32-bit unsigned integer from memory"""
-    b0 = core._core.busRead8(core._core, address)
-    b1 = core._core.busRead8(core._core, address + 1)
-    b2 = core._core.busRead8(core._core, address + 2)
-    b3 = core._core.busRead8(core._core, address + 3)
-    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-
-def read_u16(core, address):
-    """Read 16-bit unsigned integer from memory"""
-    b0 = core._core.busRead8(core._core, address)
-    b1 = core._core.busRead8(core._core, address + 1)
-    return b0 | (b1 << 8)
-
-def read_u8(core, address):
-    """Read 8-bit unsigned integer from memory"""
-    return core._core.busRead8(core._core, address)
-
-def read_bytes(core, address, length):
-    """Read multiple bytes from memory"""
-    return bytes([core._core.busRead8(core._core, address + i) for i in range(length)])
-
-def write_u8(core, address, value):
-    """Write 8-bit unsigned integer to memory"""
-    core._core.busWrite8(core._core, address, value & 0xFF)
-
-def write_bytes(core, address, data):
-    """Write multiple bytes to memory"""
-    for i, byte in enumerate(data):
-        core._core.busWrite8(core._core, address + i, byte)
-
-def get_substructure_order(pv):
-    """Get the order of substructures based on PV"""
-    order_index = pv % 24
-    orders = [
-        "GAEM", "GAME", "GEAM", "GEMA", "GMAE", "GMEA",
-        "AGEM", "AGME", "AEGM", "AEMG", "AMGE", "AMEG",
-        "EGAM", "EGMA", "EAGM", "EAMG", "EMGA", "EMAG",
-        "MGAE", "MGEA", "MAGE", "MAEG", "MEGA", "MEAG"
-    ]
-    return orders[order_index]
+# Memory addresses for party Pokemon slots 2 and 3
+# (Slot 1 address imported from constants)
+PARTY_SLOT_2_ADDR = PARTY_SLOT_1_ADDR + PARTY_SLOT_SIZE  # 0x02024550
+PARTY_SLOT_3_ADDR = PARTY_SLOT_2_ADDR + PARTY_SLOT_SIZE  # 0x020245B4
 
 def decrypt_party_species(core, pv_addr, tid_addr):
     """Decrypt and extract species ID from encrypted party data"""
     try:
         pv = read_u32(core, pv_addr)
-        tid = read_u16(core, tid_addr)
-        
-        data_start = pv_addr + 32
+        otid = read_u32(core, tid_addr)
+
+        # Use constants for offsets
         order = get_substructure_order(pv)
         growth_pos = order.index('G')
-        offset = growth_pos * 12
-        
-        encrypted_val = read_u32(core, data_start + offset)
-        xor_key = (tid & 0xFFFF) ^ pv
+        offset = growth_pos * SUBSTRUCTURE_SIZE
+
+        encrypted_val = read_u32(core, pv_addr + POKEMON_ENCRYPTED_OFFSET + offset)
+        xor_key = otid ^ pv
         decrypted_val = encrypted_val ^ xor_key
         species_id = decrypted_val & 0xFFFF
-        
+
         return species_id
     except Exception as e:
         return 0
@@ -100,35 +61,41 @@ def decrypt_party_species(core, pv_addr, tid_addr):
 def extract_pokemon_from_save_state(save_state_path):
     """Load a save state and extract the Pokemon data from slot 1"""
     print(f"\n[*] Loading save state: {save_state_path.name}")
-    
+
     core = mgba.core.load_path(ROM_PATH)
     if not core:
         raise RuntimeError(f"Failed to load ROM: {ROM_PATH}")
-    
+
     # Reset core before loading save state
     core.reset()
-    
+
     # Load the save state
     with open(save_state_path, 'rb') as f:
         state_data = f.read()
-    
+
     core.load_raw_state(state_data)
-    
+
     # Run a few frames to ensure memory is stable
     for _ in range(60):
         core.run_frame()
-    
+
     # Read the full Pokemon data (100 bytes)
     pokemon_data = read_bytes(core, PARTY_SLOT_1_ADDR, PARTY_SLOT_SIZE)
-    
+
     # Get species for verification
     pv = read_u32(core, PARTY_SLOT_1_ADDR)
-    tid = read_u16(core, PARTY_SLOT_1_ADDR + 4)
     species_id = decrypt_party_species(core, PARTY_SLOT_1_ADDR, PARTY_SLOT_1_ADDR + 4)
-    species_name = POKEMON_SPECIES.get(species_id, f"Unknown({species_id})")
-    
+
+    # Look up species name from STARTER_SPECIES or SPECIES_NAMES
+    if species_id in STARTER_SPECIES:
+        species_name = STARTER_SPECIES[species_id]
+    elif species_id in SPECIES_NAMES:
+        species_name = SPECIES_NAMES[species_id]
+    else:
+        species_name = f"Unknown({species_id})"
+
     print(f"    Extracted: {species_name} (PV: 0x{pv:08X}, Species ID: {species_id})")
-    
+
     return pokemon_data, species_name, species_id
 
 def combine_shinies():
@@ -265,10 +232,16 @@ def combine_shinies():
     for slot, name in sorted(slot_assignments.items()):
         addr = slot_addresses[slot]
         pv = read_u32(core, addr)
-        tid = read_u16(core, addr + 4)
         species_id = decrypt_party_species(core, addr, addr + 4)
-        species_name = POKEMON_SPECIES.get(species_id, f"Unknown({species_id})")
-        
+
+        # Look up species name from STARTER_SPECIES or SPECIES_NAMES
+        if species_id in STARTER_SPECIES:
+            species_name = STARTER_SPECIES[species_id]
+        elif species_id in SPECIES_NAMES:
+            species_name = SPECIES_NAMES[species_id]
+        else:
+            species_name = f"Unknown({species_id})"
+
         if pv != 0:
             print(f"    Slot {slot}: {species_name} (PV: 0x{pv:08X}) ✓")
         else:
