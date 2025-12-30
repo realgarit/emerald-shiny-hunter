@@ -25,7 +25,7 @@ Works with starter Pokemon and wild encounters on Route 101 and Route 102.
 ## Features
 
 - Hunts starters (Torchic, Mudkip, Treecko) and wild Pokemon (Route 101, Route 102)
-- Route 102 uses **flee method** - flees instead of resetting, which is faster
+- Route scripts use **flee method** - flees instead of resetting, which is faster
 - Fixes Emerald's RNG bug (game starts with same seed every reset)
 - Live window with `--show-window` flag
 - Discord webhook notifications (optional)
@@ -133,6 +133,8 @@ python3 src/torchic.py --show-window
 
 ### Route 101
 
+Route 101 uses the **flee method** - instead of resetting after each encounter, it flees and keeps hunting. Much faster.
+
 ```bash
 # Hunt all species
 python3 src/route101.py
@@ -150,7 +152,7 @@ Species: Poochyena, Zigzagoon, Wurmple
 
 ### Route 102
 
-Route 102 uses the **flee method** - instead of resetting after each encounter, it flees and keeps hunting. Much faster.
+Route 102 also uses the **flee method**.
 
 ```bash
 # Hunt all species
@@ -212,6 +214,7 @@ The script:
 3. Extracts shinies from all save states
 4. Adds them starting from first empty slot
 5. Never overwrites existing Pokemon
+6. Archives processed save states to `save_states/archive/`
 
 Output: `combined_boxes_YYYYMMDD_HHMMSS.ss0` - load in mGBA and save in-game to keep them.
 
@@ -265,7 +268,7 @@ Emerald has a bug where the RNG starts at the same value every reset. The script
 
 ### Flee Method
 
-Route 102 uses flee method because:
+Route 101 and Route 102 use flee method because:
 - No need to reload save each attempt
 - No loading sequence (15 A presses)
 - Battle transitions are faster than resets
@@ -332,6 +335,7 @@ emerald-shiny-hunter/
 │   │   ├── notifications.py        # macOS and Discord notifications
 │   │   └── savestate.py            # Screenshot and save state management
 │   ├── core/                       # Core components
+│   │   ├── __init__.py             # Package exports
 │   │   └── emulator.py             # EmulatorBase class
 │   └── debug/
 │       ├── create_base_savestate.py    # Create base save with box data
