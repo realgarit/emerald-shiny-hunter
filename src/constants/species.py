@@ -448,9 +448,9 @@ SPECIES_UNOWN_QUESTION = 439     # "?"
 # Lookup Dictionaries
 # =============================================================================
 
-# ID to Name mapping (common species used in shiny hunting)
+# ID to Name mapping (all Pokemon that can be encountered in routes/dungeons)
 SPECIES_NAMES = {
-    # Starters
+    # Starters and evolutions
     SPECIES_TREECKO: "Treecko",
     SPECIES_GROVYLE: "Grovyle",
     SPECIES_SCEPTILE: "Sceptile",
@@ -461,31 +461,39 @@ SPECIES_NAMES = {
     SPECIES_MARSHTOMP: "Marshtomp",
     SPECIES_SWAMPERT: "Swampert",
 
-    # Route 101
+    # Common route Pokemon and evolutions
     SPECIES_POOCHYENA: "Poochyena",
+    SPECIES_MIGHTYENA: "Mightyena",
     SPECIES_ZIGZAGOON: "Zigzagoon",
+    SPECIES_LINOONE: "Linoone",
     SPECIES_WURMPLE: "Wurmple",
-
-    # Route 102
+    SPECIES_SILCOON: "Silcoon",
+    SPECIES_CASCOON: "Cascoon",
     SPECIES_LOTAD: "Lotad",
+    SPECIES_LOMBRE: "Lombre",
     SPECIES_SEEDOT: "Seedot",
+    SPECIES_NUZLEAF: "Nuzleaf",
     SPECIES_RALTS: "Ralts",
-
-    # Common wild Pokemon
     SPECIES_TAILLOW: "Taillow",
+    SPECIES_SWELLOW: "Swellow",
     SPECIES_WINGULL: "Wingull",
+    SPECIES_PELIPPER: "Pelipper",
     SPECIES_SHROOMISH: "Shroomish",
     SPECIES_SLAKOTH: "Slakoth",
     SPECIES_ABRA: "Abra",
     SPECIES_SKITTY: "Skitty",
     SPECIES_MAKUHITA: "Makuhita",
+    SPECIES_HARIYAMA: "Hariyama",
     SPECIES_NINCADA: "Nincada",
     SPECIES_WHISMUR: "Whismur",
+    SPECIES_LOUDRED: "Loudred",
     SPECIES_ARON: "Aron",
+    SPECIES_LAIRON: "Lairon",
     SPECIES_SABLEYE: "Sableye",
     SPECIES_MAWILE: "Mawile",
     SPECIES_MEDITITE: "Meditite",
     SPECIES_ELECTRIKE: "Electrike",
+    SPECIES_MANECTRIC: "Manectric",
     SPECIES_PLUSLE: "Plusle",
     SPECIES_MINUN: "Minun",
     SPECIES_VOLBEAT: "Volbeat",
@@ -498,6 +506,7 @@ SPECIES_NAMES = {
     SPECIES_TRAPINCH: "Trapinch",
     SPECIES_CACNEA: "Cacnea",
     SPECIES_SWABLU: "Swablu",
+    SPECIES_ALTARIA: "Altaria",
     SPECIES_ZANGOOSE: "Zangoose",
     SPECIES_SEVIPER: "Seviper",
     SPECIES_SOLROCK: "Solrock",
@@ -505,13 +514,16 @@ SPECIES_NAMES = {
     SPECIES_BARBOACH: "Barboach",
     SPECIES_CORPHISH: "Corphish",
     SPECIES_BALTOY: "Baltoy",
+    SPECIES_CLAYDOL: "Claydol",
     SPECIES_LILEEP: "Lileep",
     SPECIES_ANORITH: "Anorith",
     SPECIES_FEEBAS: "Feebas",
     SPECIES_CASTFORM: "Castform",
     SPECIES_KECLEON: "Kecleon",
     SPECIES_SHUPPET: "Shuppet",
+    SPECIES_BANETTE: "Banette",
     SPECIES_DUSKULL: "Duskull",
+    SPECIES_DUSCLOPS: "Dusclops",
     SPECIES_TROPIUS: "Tropius",
     SPECIES_CHIMECHO: "Chimecho",
     SPECIES_ABSOL: "Absol",
@@ -522,6 +534,49 @@ SPECIES_NAMES = {
     SPECIES_LUVDISC: "Luvdisc",
     SPECIES_BAGON: "Bagon",
     SPECIES_BELDUM: "Beldum",
+
+    # Gen I/II Pokemon found in routes/dungeons
+    SPECIES_ZUBAT: "Zubat",
+    SPECIES_GOLBAT: "Golbat",
+    SPECIES_ODDISH: "Oddish",
+    SPECIES_GLOOM: "Gloom",
+    SPECIES_GEODUDE: "Geodude",
+    SPECIES_MACHOP: "Machop",
+    SPECIES_GRIMER: "Grimer",
+    SPECIES_KOFFING: "Koffing",
+    SPECIES_MARILL: "Marill",
+    SPECIES_AZUMARILL: "Azumarill",
+    SPECIES_SANDSHREW: "Sandshrew",
+    SPECIES_JIGGLYPUFF: "Jigglypuff",
+    SPECIES_SLUGMA: "Slugma",
+    SPECIES_SKARMORY: "Skarmory",
+    SPECIES_VULPIX: "Vulpix",
+    SPECIES_PIKACHU: "Pikachu",
+
+    # Safari Zone Pokemon
+    SPECIES_DODUO: "Doduo",
+    SPECIES_DODRIO: "Dodrio",
+    SPECIES_NATU: "Natu",
+    SPECIES_XATU: "Xatu",
+    SPECIES_WOBBUFFET: "Wobbuffet",
+    SPECIES_GIRAFARIG: "Girafarig",
+    SPECIES_PHANPY: "Phanpy",
+    SPECIES_RHYHORN: "Rhyhorn",
+    SPECIES_HERACROSS: "Heracross",
+    SPECIES_PINSIR: "Pinsir",
+    SPECIES_MAREEP: "Mareep",
+    SPECIES_SUNKERN: "Sunkern",
+    SPECIES_HOOTHOOT: "Hoothoot",
+    SPECIES_SPINARAK: "Spinarak",
+    SPECIES_AIPOM: "Aipom",
+    SPECIES_TEDDIURSA: "Teddiursa",
+    SPECIES_PINECO: "Pineco",
+    SPECIES_HOUNDOUR: "Houndour",
+    SPECIES_SNUBBULL: "Snubbull",
+    SPECIES_STANTLER: "Stantler",
+    SPECIES_MILTANK: "Miltank",
+    SPECIES_GLIGAR: "Gligar",
+    SPECIES_LEDYBA: "Ledyba",
 
     # Legendaries
     SPECIES_REGIROCK: "Regirock",
@@ -1002,27 +1057,6 @@ def species_from_national_dex(national_dex: int) -> tuple:
     name = SPECIES_NAMES.get(internal_id, f"Pokemon #{national_dex}")
     return internal_id, name
 
-
-# =============================================================================
-# Route-specific encounter tables
-# =============================================================================
-
-# Route 101 wild encounters
-ROUTE_101_SPECIES = {
-    SPECIES_POOCHYENA: "Poochyena",
-    SPECIES_ZIGZAGOON: "Zigzagoon",
-    SPECIES_WURMPLE: "Wurmple",
-}
-
-# Route 102 wild encounters
-ROUTE_102_SPECIES = {
-    SPECIES_POOCHYENA: "Poochyena",
-    SPECIES_ZIGZAGOON: "Zigzagoon",
-    SPECIES_WURMPLE: "Wurmple",
-    SPECIES_LOTAD: "Lotad",
-    SPECIES_SEEDOT: "Seedot",
-    SPECIES_RALTS: "Ralts",
-}
 
 # Starter Pokemon
 STARTER_SPECIES = {

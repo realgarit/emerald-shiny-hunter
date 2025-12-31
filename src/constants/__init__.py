@@ -53,10 +53,19 @@ from .species import (
     get_internal_id,
     species_from_national_dex,
 
-    # Route encounter tables
-    ROUTE_101_SPECIES,
-    ROUTE_102_SPECIES,
+    # Starter species
     STARTER_SPECIES,
+)
+
+# Route encounter tables
+from .routes import (
+    ROUTE_ENCOUNTERS,
+    DUNGEON_ENCOUNTERS,
+    get_route_species,
+    get_route_name,
+    get_available_routes,
+    get_available_dungeons,
+    get_all_locations,
 )
 
 # Memory address constants
@@ -116,6 +125,14 @@ from .keys import (
     keys_to_string,
 )
 
+# Starter configuration
+from .starters import (
+    STARTER_CONFIG,
+    get_starter_config,
+    get_available_starters,
+    get_starter_species_dict,
+)
+
 __all__ = [
     # Species
     "SPECIES_NONE", "SPECIES_EGG",
@@ -128,7 +145,12 @@ __all__ = [
     "get_species_name", "get_species_id",
     "NATIONAL_DEX", "INTERNAL_TO_NATIONAL",
     "get_national_dex", "get_internal_id", "species_from_national_dex",
-    "ROUTE_101_SPECIES", "ROUTE_102_SPECIES", "STARTER_SPECIES",
+    "STARTER_SPECIES",
+
+    # Routes
+    "ROUTE_ENCOUNTERS", "DUNGEON_ENCOUNTERS",
+    "get_route_species", "get_route_name",
+    "get_available_routes", "get_available_dungeons", "get_all_locations",
 
     # Memory
     "PARTY_COUNT_ADDR", "PARTY_SLOT_1_ADDR", "PARTY_SLOT_SIZE",
@@ -147,4 +169,8 @@ __all__ = [
     "DEFAULT_HOLD_FRAMES", "DEFAULT_RELEASE_FRAMES",
     "A_PRESS_DELAY_FRAMES", "A_LOADING_DELAY_FRAMES",
     "keys_to_string",
+
+    # Starters
+    "STARTER_CONFIG",
+    "get_starter_config", "get_available_starters", "get_starter_species_dict",
 ]

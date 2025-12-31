@@ -2,7 +2,7 @@
 
 Automated shiny hunting for Pokemon Emerald using mGBA Python bindings. The scripts check for shinies automatically so you don't have to sit there pressing buttons for hours.
 
-Works with starter Pokemon and wild encounters on Route 101 and Route 102.
+Works with starter Pokemon and wild encounters on all Hoenn routes and dungeons.
 
 ## Table of Contents
 
@@ -12,8 +12,7 @@ Works with starter Pokemon and wild encounters on Route 101 and Route 102.
 - [Setup](#setup)
 - [Usage](#usage)
   - [Starter Pokemon](#starter-pokemon)
-  - [Route 101](#route-101)
-  - [Route 102](#route-102)
+  - [Wild Pokemon](#wild-pokemon)
 - [Combining Shinies](#combining-shinies)
   - [Combine Starters](#combine-starters)
   - [Combine Box Shinies](#combine-box-shinies)
@@ -24,8 +23,9 @@ Works with starter Pokemon and wild encounters on Route 101 and Route 102.
 
 ## Features
 
-- Hunts starters (Torchic, Mudkip, Treecko) and wild Pokemon (Route 101, Route 102)
-- Route scripts use **flee method** - flees instead of resetting, which is faster
+- Hunts starters (Torchic, Mudkip, Treecko) and wild Pokemon (17 routes + 14 dungeons)
+- Starters use **soft reset method** - resets after each check
+- Wild Pokemon use **flee method** - flees instead of resetting, much faster
 - Fixes Emerald's RNG bug (game starts with same seed every reset)
 - Live window with `--show-window` flag
 - Discord webhook notifications (optional)
@@ -69,7 +69,7 @@ Or from requirements.txt:
 python3.11 -m pip install -r requirements.txt
 ```
 
-**Note:** `opencv-python` and `numpy` are only needed for route scripts. Starter scripts work without them.
+**Note:** `opencv-python` and `numpy` are only needed for window display (`--show-window`).
 
 ### 4. Verify installation
 
@@ -99,12 +99,12 @@ For starters:
 - Save the game
 
 For wild encounters:
-- Position your character on Route 101 or 102
+- Position your character on the route/dungeon you want to hunt
 - Save the game
 
 ### 3. Set your Trainer IDs
 
-Open the script you want to use and set your IDs:
+Open `src/hunt.py` and set your IDs:
 
 ```python
 TID = 56078  # Your Trainer ID
@@ -115,59 +115,51 @@ You need both for the shiny calculation to work.
 
 ## Usage
 
+All hunting is done through the unified `hunt.py` script.
+
 ### Starter Pokemon
 
-```bash
-# Hunt Torchic (middle)
-python3 src/torchic.py
-
-# Hunt Mudkip (right)
-python3 src/mudkip.py
-
-# Hunt Treecko (left)
-python3 src/treecko.py
-
-# Watch while hunting
-python3 src/torchic.py --show-window
-```
-
-### Route 101
-
-Route 101 uses the **flee method** - instead of resetting after each encounter, it flees and keeps hunting. Much faster.
+Starters use the **soft reset method** - resets the game after each check.
 
 ```bash
-# Hunt all species
-python3 src/route101.py
+# Hunt Torchic (center position)
+python3 src/hunt.py --starter torchic
 
-# Hunt specific species
-python3 src/route101.py --target zigzagoon
-python3 src/route101.py --target poochyena
-python3 src/route101.py --target wurmple
+# Hunt Mudkip (right position)
+python3 src/hunt.py --starter mudkip
+
+# Hunt Treecko (left position)
+python3 src/hunt.py --starter treecko
 
 # Watch while hunting
-python3 src/route101.py --show-window
+python3 src/hunt.py --starter torchic --show-window
 ```
 
-Species: Poochyena, Zigzagoon, Wurmple
+### Wild Pokemon
 
-### Route 102
-
-Route 102 also uses the **flee method**.
+Wild Pokemon use the **flee method** - instead of resetting after each encounter, it flees and keeps hunting. Much faster than soft resetting.
 
 ```bash
-# Hunt all species
-python3 src/route102.py
+# Hunt on any route
+python3 src/hunt.py --route 101
+python3 src/hunt.py --route 102 --target ralts
+python3 src/hunt.py --route 117
 
-# Hunt specific species
-python3 src/route102.py --target ralts
-python3 src/route102.py --target seedot
-python3 src/route102.py --target lotad
+# Hunt in dungeons
+python3 src/hunt.py --location petalburg_woods
+python3 src/hunt.py --location granite_cave --target aron
+python3 src/hunt.py --location safari_zone
+
+# List all available locations
+python3 src/hunt.py --list-routes
 
 # Watch while hunting
-python3 src/route102.py --show-window
+python3 src/hunt.py --route 101 --show-window
 ```
 
-Species: Poochyena, Zigzagoon, Wurmple, Lotad, Seedot (rare), Ralts (rare)
+**Available Routes:** 101, 102, 103, 104, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 123
+
+**Available Dungeons:** petalburg_woods, rusturf_tunnel, granite_cave, fiery_path, jagged_pass, mt_pyre_inside, mt_pyre_outside, mt_pyre_summit, meteor_falls, shoal_cave, cave_of_origin, victory_road, sky_pillar, safari_zone
 
 **Target behavior:** When hunting a specific target, the script still checks if non-target encounters are shiny. It stops when ANY shiny is found.
 
@@ -220,7 +212,7 @@ Output: `combined_boxes_YYYYMMDD_HHMMSS.ss0` - load in mGBA and save in-game to 
 
 ## Configuration
 
-Edit these in the script you're using:
+Edit these in `src/hunt.py`:
 
 | Setting | Description |
 |---------|-------------|
@@ -268,7 +260,7 @@ Emerald has a bug where the RNG starts at the same value every reset. The script
 
 ### Flee Method
 
-Route 101 and Route 102 use flee method because:
+Wild Pokemon hunting uses flee method because:
 - No need to reload save each attempt
 - No loading sequence (15 A presses)
 - Battle transitions are faster than resets
@@ -315,16 +307,14 @@ Check the log file in `logs/` for details. Make sure TID and SID are correct.
 ```
 emerald-shiny-hunter/
 ├── src/
-│   ├── torchic.py                  # Torchic starter hunt
-│   ├── mudkip.py                   # Mudkip starter hunt
-│   ├── treecko.py                  # Treecko starter hunt
-│   ├── route101.py                 # Route 101 wild encounters (flee method)
-│   ├── route102.py                 # Route 102 wild encounters (flee method)
+│   ├── hunt.py                     # Unified hunting (starters + all routes/dungeons)
 │   ├── combine_starter_shinies.py  # Combine starters into one party
 │   ├── combine_box_shinies.py      # Combine shinies into PC boxes
 │   ├── constants/                  # Shared constants
 │   │   ├── __init__.py             # Package exports
 │   │   ├── species.py              # All 411 species IDs from pokeemerald + National Dex mappings
+│   │   ├── routes.py               # Route/dungeon encounter tables
+│   │   ├── starters.py             # Starter selection sequences
 │   │   ├── memory.py               # Memory addresses (party, enemy, box, RNG)
 │   │   └── keys.py                 # GBA button constants and timing
 │   ├── utils/                      # Shared utilities
