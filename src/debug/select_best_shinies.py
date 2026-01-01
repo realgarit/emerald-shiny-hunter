@@ -31,8 +31,11 @@ from constants import (
     SPECIES_NAMES, NATIONAL_DEX,
     get_national_dex, get_species_name,
 )
-from utils import read_u32, read_bytes, write_bytes
-from constants.memory import SUBSTRUCTURE_SIZE, POKEMON_ENCRYPTED_OFFSET, SUBSTRUCTURE_ORDERS
+from utils import (
+    read_u32, read_bytes, write_bytes,
+    get_substructure_order, decrypt_ivs, format_ivs,
+)
+from constants.memory import SUBSTRUCTURE_SIZE, POKEMON_ENCRYPTED_OFFSET
 
 # Suppress GBA debug output
 sys.stderr = open(os.devnull, 'w')
@@ -41,68 +44,6 @@ mgba.log.silence()
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 ROM_PATH = str(PROJECT_ROOT / "roms" / "Pokemon - Emerald Version (U).gba")
 SAVE_STATES_DIR = PROJECT_ROOT / "save_states"
-
-
-def get_substructure_order(pv: int) -> str:
-    """Get the substructure order string based on Personality Value."""
-    return SUBSTRUCTURE_ORDERS[pv % 24]
-
-
-def decrypt_misc_substruct(core, base_addr: int) -> int:
-    """
-    Decrypt the Misc (M) substruct and return the raw 32-bit IV data.
-
-    The Misc substruct contains IVs at offset 0x04 within the substruct.
-    IVs are stored as a 32-bit value with bit-packed fields.
-    """
-    pv = read_u32(core, base_addr)
-    if pv == 0:
-        return 0
-
-    otid = read_u32(core, base_addr + 4)
-
-    # Find Misc (M) substruct position
-    order = get_substructure_order(pv)
-    misc_pos = order.index('M')
-    misc_offset = misc_pos * SUBSTRUCTURE_SIZE
-
-    # The IV data is at offset 0x04 within the Misc substruct
-    # Misc substruct starts at base_addr + 0x20 (encrypted data start) + misc_offset
-    iv_addr = base_addr + POKEMON_ENCRYPTED_OFFSET + misc_offset + 4
-
-    # Read and decrypt the IV data
-    enc_val = read_u32(core, iv_addr)
-    xor_key = otid ^ pv
-    dec_val = enc_val ^ xor_key
-
-    return dec_val
-
-
-def extract_ivs(iv_data: int) -> dict:
-    """
-    Extract individual IVs from the packed 32-bit value.
-
-    Bit layout (from LSB):
-    - Bits 0-4: HP IV (5 bits, 0-31)
-    - Bits 5-9: Attack IV (5 bits, 0-31)
-    - Bits 10-14: Defense IV (5 bits, 0-31)
-    - Bits 15-19: Speed IV (5 bits, 0-31)
-    - Bits 20-24: Sp. Attack IV (5 bits, 0-31)
-    - Bits 25-29: Sp. Defense IV (5 bits, 0-31)
-    """
-    return {
-        'hp': iv_data & 0x1F,
-        'atk': (iv_data >> 5) & 0x1F,
-        'def': (iv_data >> 10) & 0x1F,
-        'spe': (iv_data >> 15) & 0x1F,
-        'spa': (iv_data >> 20) & 0x1F,
-        'spd': (iv_data >> 25) & 0x1F,
-    }
-
-
-def get_iv_total(ivs: dict) -> int:
-    """Calculate total IV sum (max 186)."""
-    return sum(ivs.values())
 
 
 def decrypt_species(core, base_addr: int):
@@ -164,12 +105,6 @@ def get_box_slot_address(box_base: int, box_num: int, slot_num: int) -> int:
     return box_base + offset
 
 
-def format_ivs(ivs: dict) -> str:
-    """Format IVs for display."""
-    return (f"HP:{ivs['hp']:2d} ATK:{ivs['atk']:2d} DEF:{ivs['def']:2d} "
-            f"SPE:{ivs['spe']:2d} SPA:{ivs['spa']:2d} SPD:{ivs['spd']:2d}")
-
-
 def scan_boxes_with_ivs(core, box_base: int) -> list:
     """
     Scan all boxes and return list of Pokemon with their IVs.
@@ -184,9 +119,7 @@ def scan_boxes_with_ivs(core, box_base: int) -> list:
 
             if pv != 0:
                 _, species_id, species_name = decrypt_species(core, addr)
-                iv_data = decrypt_misc_substruct(core, addr)
-                ivs = extract_ivs(iv_data)
-                iv_total = get_iv_total(ivs)
+                ivs = decrypt_ivs(core, addr)
 
                 pokemon_list.append({
                     'box': box_num,
@@ -196,7 +129,7 @@ def scan_boxes_with_ivs(core, box_base: int) -> list:
                     'species_name': species_name,
                     'pv': pv,
                     'ivs': ivs,
-                    'iv_total': iv_total,
+                    'iv_total': ivs['total'],
                 })
 
     return pokemon_list
@@ -515,16 +448,14 @@ def test_first_slot():
     # Get species
     _, species_id, species_name = decrypt_species(core, addr)
 
-    # Get IVs
-    iv_data = decrypt_misc_substruct(core, addr)
-    ivs = extract_ivs(iv_data)
-    iv_total = get_iv_total(ivs)
+    # Get IVs using shared utility
+    ivs = decrypt_ivs(core, addr)
 
     print(f"\n[+] Box 1, Slot 1:")
     print(f"    Species: {species_name} (ID={species_id})")
     print(f"    PV: 0x{pv:08X}")
     print(f"    IVs: {format_ivs(ivs)}")
-    print(f"    Total: {iv_total}/186")
+    print(f"    Total: {ivs['total']}/186")
 
     # Also show raw data for debugging
     otid = read_u32(core, addr + 4)
@@ -533,7 +464,6 @@ def test_first_slot():
     print(f"\n    [DEBUG] OTID: 0x{otid:08X}")
     print(f"    [DEBUG] Substruct order: {order}")
     print(f"    [DEBUG] Misc substruct position: {misc_pos}")
-    print(f"    [DEBUG] Raw IV data: 0x{iv_data:08X}")
 
 
 def main():

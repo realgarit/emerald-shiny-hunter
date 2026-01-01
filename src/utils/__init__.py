@@ -27,6 +27,8 @@ from .pokemon import (
     calculate_shiny_value,
     check_shiny,
     convert_party_to_box,
+    decrypt_ivs,
+    format_ivs,
 )
 from .notifications import (
     play_alert_sound,
@@ -50,6 +52,7 @@ __all__ = [
     # Pokemon
     "get_substructure_order", "decrypt_species", "decrypt_species_extended",
     "calculate_shiny_value", "check_shiny", "convert_party_to_box",
+    "decrypt_ivs", "format_ivs",
     # Notifications
     "play_alert_sound", "send_macos_notification", "send_discord_notification",
     "open_file", "notify_shiny_found",

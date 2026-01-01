@@ -269,3 +269,71 @@ def convert_party_to_box(party_data: bytes) -> bytes:
         80-byte box Pokemon data
     """
     return party_data[:80]
+
+
+def decrypt_ivs(core, base_addr: int) -> Optional[dict]:
+    """
+    Decrypt IVs from a Pokemon structure.
+
+    IVs are stored in the Misc (M) substruct at offset 0x04 within that substruct.
+    They are bit-packed into a 32-bit value:
+    - Bits 0-4: HP IV (0-31)
+    - Bits 5-9: Attack IV (0-31)
+    - Bits 10-14: Defense IV (0-31)
+    - Bits 15-19: Speed IV (0-31)
+    - Bits 20-24: Sp. Attack IV (0-31)
+    - Bits 25-29: Sp. Defense IV (0-31)
+
+    Args:
+        core: mGBA core instance
+        base_addr: Base address of Pokemon structure
+
+    Returns:
+        Dict with IV values {'hp', 'atk', 'def', 'spe', 'spa', 'spd', 'total'},
+        or None if slot is empty
+    """
+    pv = read_u32(core, base_addr)
+    if pv == 0:
+        return None
+
+    otid = read_u32(core, base_addr + 4)
+
+    # Find Misc (M) substruct position
+    order = get_substructure_order(pv)
+    misc_pos = order.index('M')
+    misc_offset = misc_pos * SUBSTRUCTURE_SIZE
+
+    # IV data is at offset 0x04 within the Misc substruct
+    iv_addr = base_addr + POKEMON_ENCRYPTED_OFFSET + misc_offset + 4
+
+    # Read and decrypt
+    enc_val = read_u32(core, iv_addr)
+    xor_key = otid ^ pv
+    iv_data = enc_val ^ xor_key
+
+    # Extract individual IVs
+    ivs = {
+        'hp': iv_data & 0x1F,
+        'atk': (iv_data >> 5) & 0x1F,
+        'def': (iv_data >> 10) & 0x1F,
+        'spe': (iv_data >> 15) & 0x1F,
+        'spa': (iv_data >> 20) & 0x1F,
+        'spd': (iv_data >> 25) & 0x1F,
+    }
+    ivs['total'] = sum(ivs.values())
+
+    return ivs
+
+
+def format_ivs(ivs: dict) -> str:
+    """
+    Format IVs for display.
+
+    Args:
+        ivs: Dict with IV values from decrypt_ivs()
+
+    Returns:
+        Formatted string like "HP:10 ATK:20 DEF:15 SPE: 2 SPA: 8 SPD: 3"
+    """
+    return (f"HP:{ivs['hp']:2d} ATK:{ivs['atk']:2d} DEF:{ivs['def']:2d} "
+            f"SPE:{ivs['spe']:2d} SPA:{ivs['spa']:2d} SPD:{ivs['spd']:2d}")
