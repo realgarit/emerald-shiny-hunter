@@ -47,6 +47,7 @@ from utils import (
     check_shiny, decrypt_species, decrypt_species_extended,
     notify_shiny_found, open_file,
     save_screenshot, save_game_state,
+    decrypt_ivs, read_level, get_nature_from_pv,
 )
 from core import EmulatorBase
 
@@ -355,18 +356,30 @@ class StarterShinyHunter(EmulatorBase):
                     print(f"  Shiny Value: {shiny_value} (need < 8 for shiny)")
 
                     if is_shiny:
+                        # Read IVs, level, and nature for the shiny starter
+                        ivs = decrypt_ivs(self.core, PARTY_PV_ADDR)
+                        level = read_level(self.core, PARTY_PV_ADDR)
+                        nature = get_nature_from_pv(pv)
+
                         print("\n" + "=" * 60)
                         print("SHINY FOUND!")
                         print("=" * 60)
                         print(f"Pokemon: {species_name} (ID: {species_id})")
+                        print(f"Nature: {nature}")
+                        print(f"Level: {level}")
                         print(f"Attempts: {self.attempts}")
                         print(f"Personality Value: 0x{pv:08X}")
                         print(f"Shiny Value: {shiny_value}")
+                        if ivs:
+                            print(f"IVs: HP:{ivs['hp']} ATK:{ivs['atk']} DEF:{ivs['def']} SPE:{ivs['spe']} SPA:{ivs['spa']} SPD:{ivs['spd']} (Total: {ivs['total']})")
                         print(f"Time Elapsed: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
                         print("=" * 60)
 
                         screenshot_path = save_screenshot(self.core, PROJECT_ROOT / "screenshots")
-                        notify_shiny_found(species_name, self.attempts, pv, shiny_value, elapsed / 60)
+                        notify_shiny_found(
+                            species_name, self.attempts, pv, shiny_value, elapsed / 60,
+                            ivs=ivs, level=level, location="Starter Selection", nature=nature
+                        )
 
                         print(f"\n[+] Saving game state...")
                         save_state_path = save_game_state(self.core, PROJECT_ROOT / "save_states", species_name, self.run_frames)
@@ -738,7 +751,14 @@ class WildShinyHunter(EmulatorBase):
                     if is_shiny:
                         print(f"  SHINY {species_name} found (not target, but shiny!)")
                         elapsed = time.time() - self.start_time
-                        notify_shiny_found(species_name, self.attempts, pv, shiny_value, elapsed / 60, is_target=False)
+                        ivs = decrypt_ivs(self.core, ENEMY_PV_ADDR)
+                        level = read_level(self.core, ENEMY_PV_ADDR)
+                        nature = get_nature_from_pv(pv)
+                        notify_shiny_found(
+                            species_name, self.attempts, pv, shiny_value, elapsed / 60,
+                            is_target=False, ivs=ivs, level=level, location=self.location_name,
+                            nature=nature
+                        )
                         save_game_state(self.core, PROJECT_ROOT / "save_states", species_name, self.run_frames)
 
                     self.flee_sequence(verbose=False)
@@ -761,14 +781,23 @@ class WildShinyHunter(EmulatorBase):
                 print(f"  Shiny Value: {shiny_value} (need < 8 for shiny)")
 
                 if is_shiny:
+                    # Read IVs, level, and nature for the shiny
+                    ivs = decrypt_ivs(self.core, ENEMY_PV_ADDR)
+                    level = read_level(self.core, ENEMY_PV_ADDR)
+                    nature = get_nature_from_pv(pv)
+
                     print("\n" + "=" * 60)
                     print("SHINY FOUND!")
                     print("=" * 60)
                     print(f"Pokemon: {species_name} (ID: {species_id})")
+                    print(f"Nature: {nature}")
+                    print(f"Level: {level}")
                     print(f"Location: {self.location_name}")
                     print(f"Attempts: {self.attempts}")
                     print(f"Personality Value: 0x{pv:08X}")
                     print(f"Shiny Value: {shiny_value}")
+                    if ivs:
+                        print(f"IVs: HP:{ivs['hp']} ATK:{ivs['atk']} DEF:{ivs['def']} SPE:{ivs['spe']} SPA:{ivs['spa']} SPD:{ivs['spd']} (Total: {ivs['total']})")
                     print(f"Time Elapsed: {elapsed:.2f} seconds ({elapsed/60:.2f} minutes)")
                     print("=" * 60)
 
@@ -776,7 +805,10 @@ class WildShinyHunter(EmulatorBase):
                     screenshot_path = save_screenshot(self.core, PROJECT_ROOT / "screenshots")
 
                     # Send notifications
-                    notify_shiny_found(species_name, self.attempts, pv, shiny_value, elapsed / 60)
+                    notify_shiny_found(
+                        species_name, self.attempts, pv, shiny_value, elapsed / 60,
+                        ivs=ivs, level=level, location=self.location_name, nature=nature
+                    )
 
                     # Save game state
                     print(f"\n[+] Saving game state...")

@@ -44,6 +44,7 @@ ENEMY_PV_ADDR = 0x02024744          # Enemy Personality Value (4 bytes)
 ENEMY_TID_ADDR = 0x02024748         # Enemy OT Trainer ID (2 bytes)
 ENEMY_SID_ADDR = 0x0202474A         # Enemy OT Secret ID (2 bytes)
 ENEMY_SPECIES_ADDR = 0x0202474C     # Enemy Species ID (2 bytes) - battle structure
+ENEMY_LEVEL_OFFSET = 0x54           # Level offset within party Pokemon struct (84 bytes)
 
 # Battle structure area (for memory scanning)
 BATTLE_STRUCTURE_START = 0x02024000

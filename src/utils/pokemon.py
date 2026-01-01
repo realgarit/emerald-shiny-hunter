@@ -15,7 +15,7 @@ from .memory import read_u8, read_u16, read_u32
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from constants.memory import SUBSTRUCTURE_ORDERS, SUBSTRUCTURE_SIZE, POKEMON_ENCRYPTED_OFFSET
+from constants.memory import SUBSTRUCTURE_ORDERS, SUBSTRUCTURE_SIZE, POKEMON_ENCRYPTED_OFFSET, ENEMY_LEVEL_OFFSET
 from constants.species import NATIONAL_DEX, INTERNAL_TO_NATIONAL, get_national_dex, get_internal_id
 
 
@@ -337,3 +337,67 @@ def format_ivs(ivs: dict) -> str:
     """
     return (f"HP:{ivs['hp']:2d} ATK:{ivs['atk']:2d} DEF:{ivs['def']:2d} "
             f"SPE:{ivs['spe']:2d} SPA:{ivs['spa']:2d} SPD:{ivs['spd']:2d}")
+
+
+def format_ivs_table(ivs: dict) -> str:
+    """
+    Format IVs as a compact ASCII table for Discord display.
+
+    Args:
+        ivs: Dict with IV values from decrypt_ivs()
+
+    Returns:
+        ASCII table string for Discord code block
+    """
+    lines = [
+        f"HP  ATK DEF SPE SPA SPD │ TOT",
+        f"{ivs['hp']:>2}  {ivs['atk']:>2}  {ivs['def']:>2}  {ivs['spe']:>2}  {ivs['spa']:>2}  {ivs['spd']:>2}  │ {ivs['total']:>3}",
+    ]
+    return "\n".join(lines)
+
+
+def read_level(core, base_addr: int) -> int:
+    """
+    Read the level of a Pokemon from its party structure.
+
+    The level is stored at offset 0x54 (84 bytes) in the party Pokemon structure,
+    after the 80-byte BoxPokemon and 4-byte status field.
+
+    Args:
+        core: mGBA core instance
+        base_addr: Base address of Pokemon structure
+
+    Returns:
+        Pokemon level (1-100), or 0 if slot is empty
+    """
+    pv = read_u32(core, base_addr)
+    if pv == 0:
+        return 0
+
+    return read_u8(core, base_addr + ENEMY_LEVEL_OFFSET)
+
+
+# Nature names in order (index 0-24, calculated as PV % 25)
+NATURE_NAMES = [
+    "Hardy", "Lonely", "Brave", "Adamant", "Naughty",
+    "Bold", "Docile", "Relaxed", "Impish", "Lax",
+    "Timid", "Hasty", "Serious", "Jolly", "Naive",
+    "Modest", "Mild", "Quiet", "Bashful", "Rash",
+    "Calm", "Gentle", "Sassy", "Careful", "Quirky"
+]
+
+
+def get_nature_from_pv(pv: int) -> str:
+    """
+    Get the nature name from a Personality Value.
+
+    In Generation III, nature is calculated as PV % 25.
+
+    Args:
+        pv: The Pokemon's Personality Value (32-bit)
+
+    Returns:
+        Nature name (e.g., "Adamant", "Jolly", etc.)
+    """
+    nature_index = pv % 25
+    return NATURE_NAMES[nature_index]

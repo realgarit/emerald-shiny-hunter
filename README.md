@@ -28,7 +28,7 @@ Works with starter Pokemon and wild encounters on all Hoenn routes and dungeons.
 - Wild Pokemon use **flee method** - flees instead of resetting, much faster
 - Fixes Emerald's RNG bug (game starts with same seed every reset)
 - Live window with `--show-window` flag
-- Discord webhook notifications (optional)
+- Discord webhook notifications with shiny sprite, IVs, nature, and @everyone ping
 - macOS notifications and sound when shiny found
 - Auto-saves screenshot and game state when shiny found
 - Logs everything to file
@@ -245,7 +245,7 @@ Edit these in `src/hunt.py`:
 
 ### Discord Notifications
 
-Set up a webhook URL:
+Set up a webhook URL to get notified when a shiny is found:
 
 **Option 1: .env file**
 
@@ -261,6 +261,24 @@ export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
 ```
 
 The `.env` file is gitignored so your URL won't be committed.
+
+**Test your webhook:**
+
+```bash
+python3 src/debug/test_discord_webhook.py         # Basic test
+python3 src/debug/test_discord_webhook.py --shiny  # Test shiny notification format
+```
+
+**Notification format:**
+
+When a shiny is found, the Discord notification includes:
+- Raw text with @everyone mention: `Encountered a shiny ✨ Ralts ✨!`
+- Embed card with:
+  - Pokemon sprite (shiny, from PokemonDB)
+  - Nature and species: **Bold Ralts** (Lv. 4) at Route 102!
+  - Shiny Value
+  - IVs table (HP, ATK, DEF, SPE, SPA, SPD, Total)
+  - Total encounter count
 
 ## How It Works
 
@@ -343,7 +361,7 @@ emerald-shiny-hunter/
 │   ├── utils/                      # Shared utilities
 │   │   ├── __init__.py             # Package exports
 │   │   ├── memory.py               # Memory read/write functions
-│   │   ├── pokemon.py              # Species decryption, shiny checking
+│   │   ├── pokemon.py              # Species decryption, shiny checking, IVs, nature
 │   │   ├── logging.py              # Tee class, LogManager
 │   │   ├── notifications.py        # macOS and Discord notifications
 │   │   └── savestate.py            # Screenshot and save state management

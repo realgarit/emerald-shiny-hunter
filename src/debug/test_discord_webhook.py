@@ -14,6 +14,9 @@ from datetime import datetime
 # Get project root directory (parent of src/, which is parent of debug/)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
+# Add src to path for imports
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
 # Try to load .env file if python-dotenv is available
 try:
     from dotenv import load_dotenv
@@ -26,6 +29,8 @@ try:
         print(f"[!] .env file not found at: {env_path}")
 except ImportError:
     print("[!] python-dotenv not installed, using environment variables only")
+
+from utils.notifications import send_discord_shiny_notification
 
 def send_discord_notification(message, title="Shiny Hunter - Test", color=0x00ff00):
     """Send Discord webhook notification"""
@@ -100,28 +105,78 @@ def send_discord_notification(message, title="Shiny Hunter - Test", color=0x00ff
         traceback.print_exc()
         return False
 
+def test_shiny_notification():
+    """Test the new shiny notification format."""
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+
+    if not webhook_url:
+        print("[!] ERROR: DISCORD_WEBHOOK_URL not set!")
+        return False
+
+    print("[+] Webhook URL found: {webhook_url[:50]}...")
+    print("[+] Sending test shiny notification...")
+
+    # Test with sample data
+    test_ivs = {
+        'hp': 15,
+        'atk': 31,
+        'def': 10,
+        'spe': 22,
+        'spa': 5,
+        'spd': 18,
+        'total': 101
+    }
+
+    try:
+        send_discord_shiny_notification(
+            species_name="Ralts",
+            attempts=43166,
+            shiny_value=4,
+            is_target=True,
+            ivs=test_ivs,
+            level=4,
+            location="Route 102",
+            nature="Bold"
+        )
+        print("[+] ✓ Shiny notification sent!")
+        return True
+    except Exception as e:
+        print(f"[!] Failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("Discord Webhook Test")
     print("=" * 60)
     print()
-    
-    # Send a test message
-    test_message = (
-        "🧪 **Test Message** 🧪\n\n"
-        "This is a test notification from the Shiny Hunter script.\n"
-        "If you see this message, your Discord webhook is working correctly!\n\n"
-        "**Test Details:**\n"
-        f"- Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        "- Status: Webhook connection successful ✓"
-    )
-    
-    success = send_discord_notification(
-        test_message,
-        title="🧪 Webhook Test - Shiny Hunter",
-        color=0x0099ff  # Blue color for test messages
-    )
-    
+
+    # Check which test to run
+    if len(sys.argv) > 1 and sys.argv[1] == "--shiny":
+        # Test new shiny notification format
+        success = test_shiny_notification()
+    else:
+        # Send a basic test message
+        test_message = (
+            "🧪 **Test Message** 🧪\n\n"
+            "This is a test notification from the Shiny Hunter script.\n"
+            "If you see this message, your Discord webhook is working correctly!\n\n"
+            "**Test Details:**\n"
+            f"- Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            "- Status: Webhook connection successful ✓"
+        )
+
+        success = send_discord_notification(
+            test_message,
+            title="🧪 Webhook Test - Shiny Hunter",
+            color=0x0099ff  # Blue color for test messages
+        )
+
+        print()
+        print("Tip: Run with --shiny to test the new shiny notification format")
+
     print()
     if success:
         print("=" * 60)
