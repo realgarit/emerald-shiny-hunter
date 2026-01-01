@@ -210,6 +210,29 @@ The script:
 
 Output: `combined_boxes_YYYYMMDD_HHMMSS.ss0` - load in mGBA and save in-game to keep them.
 
+### Select Best Shinies
+
+When you have multiple shinies of the same species, select the best ones by IV total:
+
+```bash
+python3 src/debug/select_best_shinies.py
+```
+
+The script:
+1. Scans all boxes and reads IVs for each Pokemon
+2. Groups Pokemon by species
+3. For species with more than 3, shows all IVs and marks top 3 to keep
+4. Asks confirmation before deleting extras
+5. Reorganizes boxes alphabetically by species (best IVs first within each species)
+
+Test IV reading on first box slot:
+
+```bash
+python3 src/debug/select_best_shinies.py --test
+```
+
+Output: `best_shinies_YYYYMMDD_HHMMSS.ss0`
+
 ## Configuration
 
 Edit these in `src/hunt.py`:
@@ -329,6 +352,7 @@ emerald-shiny-hunter/
 │   │   └── emulator.py             # EmulatorBase class
 │   └── debug/
 │       ├── create_base_savestate.py    # Create base save with box data
+│       ├── select_best_shinies.py      # Select best shinies by IV, reorganize boxes
 │       └── test_discord_webhook.py     # Test Discord notifications
 ├── roms/           # ROM and save files (gitignored)
 ├── screenshots/    # Shiny screenshots (gitignored)
