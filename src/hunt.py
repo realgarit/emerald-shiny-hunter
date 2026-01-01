@@ -527,11 +527,12 @@ class WildShinyHunter(EmulatorBase):
         if verbose:
             print(" Done")
 
-    def encounter_sequence(self, verbose=False, max_turns=1000):
+    def encounter_sequence(self, verbose=False, max_turns=1000, timeout_seconds=60):
         """
         Execute the encounter sequence: Turn in place to trigger wild encounters.
 
         Uses flee method timings: Hold=1 frame, Wait=20 frames.
+        Returns True if encounter found, False if max_turns or timeout reached.
         """
         if verbose:
             print(f"    Turning in place to trigger encounters...", end='', flush=True)
@@ -542,8 +543,14 @@ class WildShinyHunter(EmulatorBase):
 
         turn_count = 0
         start_with_right = (self.last_direction == 'left')
+        sequence_start = time.time()
 
         while turn_count < max_turns:
+            # Timeout check to prevent infinite loops if flee failed
+            if time.time() - sequence_start > timeout_seconds:
+                if verbose:
+                    print(f" Timeout after {timeout_seconds}s")
+                return False
             if start_with_right:
                 self.press_right(hold_frames=RIGHT_HOLD_FRAMES, release_frames=0)
                 self.run_frames(RIGHT_WAIT_FRAMES)
@@ -690,6 +697,20 @@ class WildShinyHunter(EmulatorBase):
                 pokemon_found = self.encounter_sequence(verbose=(self.attempts == 0))
 
                 if not pokemon_found:
+                    # Timeout or max_turns reached - likely stuck, reset to recover
+                    print(f"\n[!] No encounter after timeout - resetting to recover...")
+                    if not self.reset_to_save():
+                        raise Exception("Failed to reset to save")
+                    random_seed = random.randint(0, 0xFFFFFFFF)
+                    random_delay = random.randint(10, 100)
+                    self.run_frames(random_delay)
+                    self.write_rng_seed(random_seed)
+                    self.run_frames(random.randint(5, 20))
+                    self.loading_sequence(verbose=False)
+                    self.write_rng_seed(random_seed)
+                    self.run_frames(5)
+                    self.run_frames(15)
+                    self.last_battle_pv = None  # Clear last battle PV
                     continue
 
                 # Wait for battle data to stabilize
