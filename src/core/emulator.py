@@ -298,3 +298,16 @@ class EmulatorBase:
             8-bit unsigned integer
         """
         return self.core._core.busRead8(self.core._core, address)
+
+    def write_memory_u16(self, address: int, value: int):
+        """
+        Write 16-bit value to memory.
+
+        Args:
+            address: Memory address
+            value: 16-bit value to write
+        """
+        b0 = value & 0xFF
+        b1 = (value >> 8) & 0xFF
+        self.core._core.busWrite8(self.core._core, address, b0)
+        self.core._core.busWrite8(self.core._core, address + 1, b1)

@@ -165,3 +165,48 @@ def get_box_slot_address(box_base: int, box_num: int, slot_num: int) -> int:
 
     offset = (box_num * POKEMON_PER_BOX + slot_num) * BOX_POKEMON_SIZE
     return box_base + offset
+
+
+# =============================================================================
+# Party Pokemon Structure Offsets (for healer.py and battle.py)
+# =============================================================================
+POKEMON_HP_OFFSET = 0x56              # Current HP in party struct (16-bit)
+POKEMON_MAX_HP_OFFSET = 0x58          # Max HP in party struct (16-bit)
+POKEMON_STATUS_OFFSET = 0x50          # Status condition (32-bit)
+
+# =============================================================================
+# Save Block Pointers (for healer.py)
+# =============================================================================
+G_SAVE_BLOCK_1_PTR = 0x03005D8C       # Pointer to SaveBlock1
+SB1_PARTY_OFFSET = 0x234              # Party offset within SaveBlock1
+
+# =============================================================================
+# Battle State Memory Addresses (for battle.py)
+# =============================================================================
+# From pokeemerald decompilation symbols
+
+# Battle state flags
+G_BATTLE_TYPE_FLAGS = 0x02022fec      # gBattleTypeFlags (32-bit) - non-zero = in battle
+G_BATTLE_OUTCOME = 0x0202433a         # gBattleOutcome (8-bit)
+
+# Battle Pokemon data
+G_BATTLE_MONS = 0x02024084            # gBattleMons array base
+BATTLE_MON_SIZE = 0x58                # Size of each BattlePokemon struct (88 bytes)
+BATTLE_MON_HP_OFFSET = 0x28           # HP offset within BattlePokemon (16-bit)
+BATTLE_MON_MAX_HP_OFFSET = 0x2A       # Max HP offset within BattlePokemon (16-bit)
+
+# Enemy battle mon (index 1 in singles battles, player = 0)
+G_ENEMY_BATTLE_MON = G_BATTLE_MONS + BATTLE_MON_SIZE  # 0x020240DC
+
+# Move learning detection
+G_MOVE_TO_LEARN = 0x020244e2          # gMoveToLearn (16-bit) - non-zero when learning prompt
+
+# Battle outcome constants
+BATTLE_OUTCOME_NONE = 0
+BATTLE_OUTCOME_WON = 1
+BATTLE_OUTCOME_LOST = 2
+BATTLE_OUTCOME_DREW = 3
+BATTLE_OUTCOME_RAN = 4
+BATTLE_OUTCOME_PLAYER_TELEPORTED = 5
+BATTLE_OUTCOME_MON_FLED = 6
+BATTLE_OUTCOME_CAUGHT = 7
