@@ -133,6 +133,7 @@ class XPFarmer(EmulatorBase):
         self.g_main_addr = None
         self.battle_cb2 = None
         self.overworld_cb2 = None
+        self.menu_cursor_on_save = False
 
         # Statistics
         self.battles_completed = 0
@@ -616,6 +617,81 @@ class XPFarmer(EmulatorBase):
         except Exception as e:
             self.debug_log(f"Healing error: {e}", "ERROR")
 
+    def save_game(self):
+        """
+        Save the game using the Start menu.
+        Sequence: START -> UP -> UP -> A (Select Save) -> A (Yes) -> A (Confirm) -> Wait.
+        """
+        self.debug_log("Saving game...")
+        
+        # Wait for battle state to clear (stale flags)
+        # Give the game 1 second to settle after transition
+        for _ in range(60):
+            if not self.is_in_battle():
+                break
+            # Also check CB2 if we know it
+            curr_cb2 = self.read_callback2()
+            if self.overworld_cb2 and curr_cb2 == self.overworld_cb2:
+                break
+            self.run_frames(1)
+
+        # Check safety
+        in_battle = self.is_in_battle()
+        is_safe = False
+        
+        # Trust CB2 if we have it
+        if self.overworld_cb2:
+            if self.read_callback2() == self.overworld_cb2:
+                is_safe = True
+        
+        # Fallback to flags
+        if not is_safe and not in_battle:
+            is_safe = True
+
+        if not is_safe:
+            self.debug_log(f"Cannot save! (In Battle: {in_battle}, CB2: 0x{self.read_callback2():08X}, Expected Overworld: 0x{self.overworld_cb2 if self.overworld_cb2 else 0:08X})", "WARN")
+            
+            # User requested Force Clear
+            self.debug_log("Attempting Force Clear of Battle Flags...", "WARN")
+            try:
+                self.write_memory_u16(G_BATTLE_TYPE_FLAGS, 0) # Clear lower 16 bits
+                self.write_memory_u16(G_BATTLE_TYPE_FLAGS + 2, 0) # Clear upper 16 bits
+                self.debug_log("Battle flags cleared. Proceeding with save.")
+            except Exception as e:
+                self.debug_log(f"Force clear failed: {e}", "ERROR")
+                return False
+
+        # 1. Open Start Menu
+        self.press_start(hold_frames=5, release_frames=30)
+        
+        # 2. Navigate to SAVE
+        if not self.menu_cursor_on_save:
+            # First time: Go up 3 times (Pokedex -> Exit -> Option -> Save)
+            self.debug_log("Navigating to Save (First time sequence)")
+            self.press_up(hold_frames=5, release_frames=10)
+            self.press_up(hold_frames=5, release_frames=10)
+            self.press_up(hold_frames=5, release_frames=10)
+            self.menu_cursor_on_save = True
+        else:
+            self.debug_log("Cursor already on Save (Subsequent sequence)")
+            
+        self.press_a(hold_frames=5, release_frames=60)
+        
+        # 3. Confirm Save "Would you like to save?"
+        self.press_a(hold_frames=5, release_frames=60)
+        
+        # 4. Confirm Overwrite "There is already a saved game..."
+        self.press_a(hold_frames=5, release_frames=300) # Wait for "SAVING..."
+        
+        # 5. Wait for save to complete (it can be slow)
+        self.run_frames(300)
+        
+        # 6. clear text / close
+        self.press_a(hold_frames=5, release_frames=30)
+        
+        self.debug_log("Save sequence complete")
+        return True
+
     # =========================================================================
     # Main Farming Loop
     # =========================================================================
@@ -635,6 +711,7 @@ class XPFarmer(EmulatorBase):
         if not self.reset_to_save():
             self.debug_log("Failed to reset to save", "ERROR")
             return False
+        self.menu_cursor_on_save = False
 
         self.loading_sequence(verbose=True)
         self.debug_log("Ready to farm XP")
@@ -653,6 +730,7 @@ class XPFarmer(EmulatorBase):
                 if not self.encounter_sequence():
                     self.debug_log("No encounter found, resetting", "WARN")
                     self.reset_to_save()
+                    self.menu_cursor_on_save = False
                     self.loading_sequence()
                     continue
 
@@ -795,7 +873,12 @@ class XPFarmer(EmulatorBase):
                 self.current_state = BattleState.POST_BATTLE
                 self.heal_after_battle()
 
-                # 7. Update statistics
+                # 7. Save game every 5 battles
+                # We do this after healing so we save in a safe, full-health state
+                if (self.battles_completed + 1) % 5 == 0:
+                    self.save_game()
+
+                # 8. Update statistics
                 self.battles_completed += 1
                 elapsed = time.time() - self.start_time
                 battles_per_hour = (self.battles_completed / elapsed) * 3600 if elapsed > 0 else 0
@@ -817,6 +900,7 @@ class XPFarmer(EmulatorBase):
                 self.debug_log(f"Error in battle loop: {e}", "ERROR")
                 # Try to recover
                 self.reset_to_save()
+                self.menu_cursor_on_save = False
                 self.loading_sequence()
 
         # Final statistics
